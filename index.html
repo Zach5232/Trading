@@ -853,6 +853,7 @@ canvas{width:100%!important}
       <input type="file" id="c-import-file" accept=".json" style="display:none" onchange="cImportJSON(this)">
       <span style="display:inline-flex;align-items:center;padding:7px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;min-height:38px">Import JSON backup</span>
     </label>
+    <button onclick="cCleanupAndRenumber()" style="padding:7px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(229,85,85,0.4);color:#e55555;min-height:38px">⚠ Cleanup &amp; renumber</button>
   </div>
   <div style="padding:.75rem 1rem;border-radius:8px;background:#2e1e00;border:.5px solid #e5a020;font-size:12px;color:#e5a020;margin-bottom:.75rem">
     All data is stored in Firestore under your Google account. Export a JSON backup after every Sunday close.
@@ -3814,12 +3815,17 @@ async function cCloseWeek() {
   const totalR   = wkTrades.reduce((s,t) => s + (t.R_multiple ||0), 0);
   const newEq    = (cryptoConfig.account_equity || C_STARTING) + pnl;
 
+  // Carry any saved observation into the week record before closing
+  const existingWeek = cryptoWeeks.find(w => w.week === wkNum);
+  const observation  = (existingWeek && existingWeek.observation) || '';
+
   const batch = db.batch();
   batch.set(userRef.collection('crypto_weeks').doc('week-' + wkNum), {
     week: wkNum, trades: wkTrades.length, wins, losses,
     pnl: Math.round(pnl * 100) / 100,
     totalR: Math.round(totalR * 1000) / 1000,
     note: note.trim(),
+    observation,
     closed_at: firebase.firestore.FieldValue.serverTimestamp(),
   });
   batch.set(userRef.collection('crypto_config').doc('settings'), {
@@ -3830,6 +3836,10 @@ async function cCloseWeek() {
 
   try {
     await dbWrite(batch.commit());
+    // Reset observation panel to blank for the new week
+    cShowNoteEditView('');
+    const titleEl = document.getElementById('c-note-title');
+    if (titleEl) titleEl.textContent = 'Week ' + (wkNum + 1) + ' Observations';
   } catch(e) { alert('Error closing week: ' + e.message); }
 }
 
@@ -3905,6 +3915,76 @@ async function cImportJSON(input) {
     alert('Import error: ' + e.message);
   }
   input.value = '';
+}
+
+/* ── data cleanup: delete Mar 13 trades and renumber weeks ── */
+async function cCleanupAndRenumber() {
+  if (!userRef) { alert('Not signed in.'); return; }
+  if (!confirm(
+    'This will:\n' +
+    '• Delete all trades dated 2026-03-13\n' +
+    '• Rename week-2 → week-1 (trades + week record)\n' +
+    '• Set currentWeek to 2\n\n' +
+    'Continue?'
+  )) return;
+
+  const statusEl = document.createElement('div');
+  statusEl.style.cssText = 'position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:#222;color:#e8e6e0;font-size:12px;padding:8px 16px;border-radius:8px;z-index:9999';
+  statusEl.textContent = 'Running cleanup…';
+  document.body.appendChild(statusEl);
+
+  try {
+    // Step 1: fetch all trades
+    const allSnap = await userRef.collection('crypto_trades').get();
+    const batch = db.batch();
+
+    allSnap.docs.forEach(doc => {
+      const d = doc.data();
+      if (d.date === '2026-03-13') {
+        // Delete Mar 13 trades
+        batch.delete(doc.ref);
+      } else if (d.week === 2) {
+        // Renumber week 2 → week 1
+        batch.update(doc.ref, { week: 1 });
+      }
+    });
+
+    // Step 2: rename week-2 record to week-1
+    const wk2Snap = await userRef.collection('crypto_weeks').doc('week-2').get();
+    if (wk2Snap.exists) {
+      const wk2Data = wk2Snap.data();
+      batch.set(userRef.collection('crypto_weeks').doc('week-1'), { ...wk2Data, week: 1 });
+      batch.delete(userRef.collection('crypto_weeks').doc('week-2'));
+    }
+
+    // Step 3: set currentWeek to 2
+    batch.set(userRef.collection('crypto_config').doc('settings'), {
+      ...cryptoConfig,
+      current_week: 2,
+    });
+
+    await batch.commit();
+    statusEl.textContent = 'Cleanup done — reloading…';
+
+    // Step 4: reload and re-render
+    const [tSnap, wSnap, cSnap] = await Promise.all([
+      userRef.collection('crypto_trades').orderBy('created_at', 'desc').get(),
+      userRef.collection('crypto_weeks').orderBy('week').get(),
+      userRef.collection('crypto_config').doc('settings').get(),
+    ]);
+    cryptoTrades = tSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    cryptoWeeks  = wSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (cSnap.exists) cryptoConfig = { ...cryptoConfig, ...cSnap.data() };
+    renderCrypto();
+    await cLoadWeeklyNote();
+
+    setTimeout(() => statusEl.remove(), 2000);
+    statusEl.textContent = '✓ Cleanup complete';
+  } catch(e) {
+    statusEl.textContent = 'Error: ' + e.message;
+    console.error('[CRYPTO] cleanup error', e);
+    setTimeout(() => statusEl.remove(), 5000);
+  }
 }
 
 // Call on init to set correct visibility
