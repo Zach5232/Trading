@@ -1332,13 +1332,43 @@ function syncTradeAlerts(){
 
 /* ── price fetching ── */
 async function fetchPrice(ticker){
-  try{
-    const url=`https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1d`;
-    const r=await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`);
-    const d=await r.json();
-    const m=JSON.parse(d.contents)?.chart?.result?.[0]?.meta;
-    return m?.regularMarketPrice||m?.previousClose||null;
-  }catch(e){return null;}
+  const path=`/v8/finance/chart/${ticker}?interval=1d&range=1d`;
+  const direct=[
+    `https://query1.finance.yahoo.com${path}`,
+    `https://query2.finance.yahoo.com${path}`
+  ];
+  const proxies=[
+    `https://api.allorigins.win/get?url=${encodeURIComponent(direct[0])}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(direct[0])}`,
+    `https://corsproxy.io/?${encodeURIComponent(direct[0])}`
+  ];
+
+  // Try direct endpoints first (works in some browsers/environments)
+  for(const url of direct){
+    try{
+      const r=await fetch(url,{signal:AbortSignal.timeout(3000)});
+      if(!r.ok) continue;
+      const d=await r.json();
+      const m=d?.chart?.result?.[0]?.meta;
+      if(m?.regularMarketPrice) return m.regularMarketPrice;
+    }catch(e){}
+  }
+
+  // Fall back through proxies in order
+  for(const url of proxies){
+    try{
+      const r=await fetch(url,{signal:AbortSignal.timeout(5000)});
+      if(!r.ok) continue;
+      const d=await r.json();
+      // allorigins wraps in .contents, codetabs/corsproxy return raw JSON
+      const parsed = typeof d.contents==='string' ? JSON.parse(d.contents) : d;
+      const m=parsed?.chart?.result?.[0]?.meta;
+      if(m?.regularMarketPrice||m?.previousClose)
+        return m.regularMarketPrice||m.previousClose;
+    }catch(e){}
+  }
+
+  return null;
 }
 
 async function fetchSpyHistory(){
@@ -3741,7 +3771,7 @@ async function bootUser(user){
   render();
   refreshPrices();
   fetchSpyHistory();
-  setInterval(()=>refreshPrices(false),60000);
+  setInterval(()=>refreshPrices(false),30000);
   setInterval(fetchSpyHistory,3600000);
   console.log('[AUTH] boot complete');
 }
