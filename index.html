@@ -2858,31 +2858,78 @@ async function loadCryptoData() {
     await seedCryptoData();
   }
 
+  // ── Fallback one-time fetch: render metrics immediately before listeners fire ──
+  try {
+    const [tInit, wInit, sInit, cInit] = await Promise.all([
+      userRef.collection('crypto_trades').orderBy('created_at', 'desc').get(),
+      userRef.collection('crypto_weeks').orderBy('week').get(),
+      userRef.collection('crypto_signals').orderBy('date', 'desc').limit(1).get(),
+      userRef.collection('crypto_config').doc('settings').get(),
+    ]);
+    cryptoTrades = tInit.docs.map(d => ({ id: d.id, ...d.data() }));
+    cryptoWeeks  = wInit.docs.map(d => ({ id: d.id, ...d.data() }));
+    cryptoSignal = sInit.docs.length ? { id: sInit.docs[0].id, ...sInit.docs[0].data() } : null;
+    if (cInit.exists) cryptoConfig = { ...cryptoConfig, ...cInit.data() };
+    renderCrypto();
+  } catch(e) {
+    console.warn('[CRYPTO] initial fetch failed, waiting for listeners', e);
+  }
+
   return new Promise(resolve => {
     let ready = 0;
     const N = 4;
     const onFirst = () => { if (++ready >= N) resolve(); };
 
+    // Re-fetch a collection on listener error and re-render so metrics stay live
+    function onTradesError(err) {
+      console.warn('[CRYPTO] trades listener dropped, fetching fallback', err);
+      userRef.collection('crypto_trades').orderBy('created_at', 'desc').get()
+        .then(s => { cryptoTrades = s.docs.map(d => ({ id: d.id, ...d.data() })); renderCrypto(); })
+        .catch(() => {});
+      onFirst();
+    }
+    function onWeeksError(err) {
+      console.warn('[CRYPTO] weeks listener dropped, fetching fallback', err);
+      userRef.collection('crypto_weeks').orderBy('week').get()
+        .then(s => { cryptoWeeks = s.docs.map(d => ({ id: d.id, ...d.data() })); renderCrypto(); })
+        .catch(() => {});
+      onFirst();
+    }
+    function onSignalError(err) {
+      console.warn('[CRYPTO] signal listener dropped, fetching fallback', err);
+      userRef.collection('crypto_signals').orderBy('date', 'desc').limit(1).get()
+        .then(s => { cryptoSignal = s.docs.length ? { id: s.docs[0].id, ...s.docs[0].data() } : null; renderCrypto(); })
+        .catch(() => {});
+      onFirst();
+    }
+    function onConfigError(err) {
+      console.warn('[CRYPTO] config listener dropped, fetching fallback', err);
+      userRef.collection('crypto_config').doc('settings').get()
+        .then(s => { if (s.exists) { cryptoConfig = { ...cryptoConfig, ...s.data() }; renderCrypto(); } })
+        .catch(() => {});
+      onFirst();
+    }
+
     _cryptoUnsubs.push(
       userRef.collection('crypto_trades').orderBy('created_at', 'desc').onSnapshot(snap => {
         cryptoTrades = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         ready < N ? onFirst() : renderCrypto();
-      }, () => onFirst()),
+      }, onTradesError),
 
       userRef.collection('crypto_weeks').orderBy('week').onSnapshot(snap => {
         cryptoWeeks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         ready < N ? onFirst() : renderCrypto();
-      }, () => onFirst()),
+      }, onWeeksError),
 
       userRef.collection('crypto_signals').orderBy('date', 'desc').limit(1).onSnapshot(snap => {
         cryptoSignal = snap.docs.length ? { id: snap.docs[0].id, ...snap.docs[0].data() } : null;
         ready < N ? onFirst() : renderCrypto();
-      }, () => onFirst()),
+      }, onSignalError),
 
       userRef.collection('crypto_config').doc('settings').onSnapshot(snap => {
         if (snap.exists) cryptoConfig = { ...cryptoConfig, ...snap.data() };
         ready < N ? onFirst() : renderCrypto();
-      }, () => onFirst())
+      }, onConfigError)
     );
     cLoadWeeklyNote();
   });
