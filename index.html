@@ -325,72 +325,11 @@ canvas{width:100%!important}
 <div id="main-tab-nav" style="display:flex;gap:6px;margin-bottom:1rem;overflow-x:auto;padding-bottom:2px">
   <button id="tab-btn-stock" class="tab-btn active" onclick="showMainTab('stock')" style="white-space:nowrap">📈 Stock</button>
   <button id="tab-btn-crypto" class="tab-btn" onclick="showMainTab('crypto')" style="white-space:nowrap">₿ Crypto</button>
+  <button id="tab-btn-howto" class="tab-btn" onclick="showMainTab('howto')" style="white-space:nowrap">📖 How to Use</button>
 </div>
 
 <!-- ── STOCK TAB WRAPPER ── -->
 <div id="main-stock">
-
-<!-- STOCK SUB-TABS -->
-<div class="tab-bar" style="margin-bottom:1rem">
-  <button id="stock-tab-howto" class="tab-btn" onclick="showStockTab('howto')">📖 How to Use</button>
-  <button id="stock-tab-dash" class="tab-btn active" onclick="showStockTab('dash')">📊 Dashboard</button>
-</div>
-
-<!-- HOW TO USE — STOCK -->
-<div id="stock-howto-content" style="display:none">
-
-<div class="card">
-  <div class="ctitle">Weekly schedule</div>
-  <div class="c-filter-row">
-    <span style="font-weight:500">Monday morning</span>
-    <span style="opacity:.6;font-size:11px">Run model, upload CSV to dashboard</span>
-  </div>
-  <div class="c-filter-row">
-    <span style="font-weight:500">Friday</span>
-    <span style="opacity:.6;font-size:11px">Log exits before weekend, review performance</span>
-  </div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Terminal command</div>
-  <div style="position:relative;margin-bottom:.5rem">
-    <pre id="stock-cmd-1" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">cd ~/Library/Mobile\ Documents/com\~apple\~CloudDocs/Trading && python3 stock_model/main.py</pre>
-    <button onclick="copyCmd('stock-cmd-1',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
-  </div>
-  <div style="font-size:11px;opacity:.5">Paste this into Terminal. Candidates CSV saves automatically.</div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Monday morning checklist</div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Run <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">main.py</code> from terminal (command above)</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Find the CSV in <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Trading/stock_model/Results/candidates/</code></span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Go to Dashboard tab → "Load Monday slate" → upload that CSV</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Review candidates, add trades you're taking via "Log a trade" form</span></div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Friday checklist</div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Check each open position — did target or stop trigger this week?</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Log exits for closed positions using the close button on each trade</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Archive the week via "Archive week" button before running next week's model</span></div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Where files save</div>
-  <div class="c-filter-row">
-    <span style="opacity:.6;font-size:12px">Candidate CSV</span>
-    <code style="font-size:11px;opacity:.7">Trading/stock_model/Results/candidates/</code>
-  </div>
-  <div class="c-filter-row">
-    <span style="opacity:.6;font-size:12px">Execution log</span>
-    <code style="font-size:11px;opacity:.7">Trading/stock_model/Results/execution_log.csv</code>
-  </div>
-</div>
-
-</div><!-- /stock-howto-content -->
-
-<!-- STOCK DASHBOARD CONTENT -->
-<div id="stock-dash-content">
 
 <!-- HEADER -->
 <div class="hdr">
@@ -672,135 +611,12 @@ canvas{width:100%!important}
   </div>
 </div>
 
-</div><!-- /stock-dash-content -->
-
 </div><!-- /main-stock -->
 
 <!-- ════════════════════════════════════════════════════
      CRYPTO TAB
      ════════════════════════════════════════════════════ -->
 <div id="main-crypto" style="display:none">
-
-<!-- CRYPTO SUB-TABS -->
-<div class="tab-bar" style="margin-bottom:1rem">
-  <button id="crypto-tab-howto" class="tab-btn" onclick="showCryptoTab('howto')">📖 How to Use</button>
-  <button id="crypto-tab-dash" class="tab-btn active" onclick="showCryptoTab('dash')">₿ Dashboard</button>
-</div>
-
-<!-- HOW TO USE — CRYPTO -->
-<div id="crypto-howto-content" style="display:none">
-
-<div class="card">
-  <div class="ctitle">Weekly schedule</div>
-  <div class="c-filter-row">
-    <span style="font-weight:500">Friday night</span>
-    <span style="opacity:.6;font-size:11px">Run main.py after market close — weekend signals</span>
-  </div>
-  <div class="c-filter-row">
-    <span style="font-weight:500">Monday night</span>
-    <span style="opacity:.6;font-size:11px">Run main.py — BTC daily signal check</span>
-  </div>
-  <div class="c-filter-row">
-    <span style="font-weight:500">Thursday night</span>
-    <span style="opacity:.6;font-size:11px">Run main.py — ETH daily signal check</span>
-  </div>
-  <div class="c-filter-row" style="border-bottom:none">
-    <span style="font-weight:500">Sunday night</span>
-    <span style="opacity:.6;font-size:11px">No command — log exits, close week, export backup</span>
-  </div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Terminal command</div>
-  <div style="position:relative;margin-bottom:.5rem">
-    <pre id="crypto-cmd-1" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">cd ~/Library/Mobile\ Documents/com\~apple\~CloudDocs/Trading && python3 crypto_model/crypto/main.py</pre>
-    <button onclick="copyCmd('crypto-cmd-1',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
-  </div>
-  <div style="font-size:11px;opacity:.5">Paste into Terminal on Friday, Monday, and Thursday nights. Signal auto-writes to Firestore.</div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Friday night checklist</div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">1</span><span style="font-size:13px">Run <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">main.py</code> after market close (command above)</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">2</span><span style="font-size:13px">Check all three filters: MA20, ATR expansion, momentum</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">3</span><span style="font-size:13px">Signal auto-writes to Firestore — open Dashboard, it's already there</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">4</span><span style="font-size:13px">Log LONG or NO_TRADE in dashboard — one row per instrument</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">5</span><span style="font-size:13px">If LONG: place stop-limit order in TradingView paper account</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">6</span><span style="font-size:13px">Export JSON backup → save to <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Trading/crypto_model/</code></span></div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Sunday night checklist</div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">1</span><span style="font-size:13px">Check TradingView — did target or stop trigger?</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">2</span><span style="font-size:13px">If neither: TIME exit at current market price ~9pm ET</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">3</span><span style="font-size:13px">Log exit in dashboard — exit price, exit type, notes</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">4</span><span style="font-size:13px">Close week in Weekly tab with a short note</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">5</span><span style="font-size:13px">Export JSON backup → save to <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Trading/crypto_model/</code> with today's date</span></div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Exit types explained</div>
-  <div class="c-filter-row">
-    <span><span class="badge c-badge-target" style="margin-right:8px">TARGET</span>2R level hit — TradingView take-profit triggered</span>
-  </div>
-  <div class="c-filter-row">
-    <span><span class="badge c-badge-stop" style="margin-right:8px">STOP</span>Stopped out — TradingView stop-loss triggered</span>
-  </div>
-  <div class="c-filter-row">
-    <span><span class="badge c-badge-time" style="margin-right:8px">TIME</span>Sunday close, neither target nor stop triggered (~78% of backtest trades)</span>
-  </div>
-  <div class="c-filter-row" style="border-bottom:none">
-    <span><span class="badge c-badge-open" style="margin-right:8px">MONDAY</span>Profitable at Sunday close — carry with breakeven stop, close Monday</span>
-  </div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Where files save</div>
-  <div class="c-filter-row">
-    <span style="opacity:.6;font-size:12px">Candidate CSV</span>
-    <code style="font-size:11px;opacity:.7">Trading/crypto_model/Results/crypto_candidates/</code>
-  </div>
-  <div class="c-filter-row">
-    <span style="opacity:.6;font-size:12px">Dashboard backup JSON</span>
-    <code style="font-size:11px;opacity:.7">Save manually to Trading/crypto_model/</code>
-  </div>
-  <div class="c-filter-row" style="border-bottom:none">
-    <span style="opacity:.6;font-size:12px">Firebase signals</span>
-    <code style="font-size:11px;opacity:.7">Auto-written by main.py — no upload needed</code>
-  </div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Phase 1 gates — all three must pass before real capital</div>
-  <div class="c-gate-row">
-    <span style="font-size:18px;min-width:24px">①</span>
-    <span style="font-size:13px">8 weeks of paper trades logged</span>
-  </div>
-  <div class="c-gate-row">
-    <span style="font-size:18px;min-width:24px">②</span>
-    <span style="font-size:13px">Live win rate above 50%</span>
-  </div>
-  <div class="c-gate-row">
-    <span style="font-size:18px;min-width:24px">③</span>
-    <span style="font-size:13px">Positive after-tax expectancy at 32% tax rate</span>
-  </div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Locked parameters — Phase 1</div>
-  <table class="c-params-tbl">
-    <tr><td style="opacity:.5;width:160px">Stop distance</td><td>1.25 × ATR14</td></tr>
-    <tr><td style="opacity:.5">Target</td><td>2.0R</td></tr>
-    <tr><td style="opacity:.5">Risk per trade</td><td>5% of equity ($25 at $500)</td></tr>
-    <tr><td style="opacity:.5">Max exposure</td><td>10% ($50 if both signal)</td></tr>
-    <tr><td style="opacity:.5">Rule</td><td style="color:#e55555;font-size:12px">No parameter changes before 8 weeks are complete</td></tr>
-  </table>
-</div>
-
-</div><!-- /crypto-howto-content -->
-
-<!-- CRYPTO DASHBOARD CONTENT -->
-<div id="crypto-dash-content">
 
 <!-- ── A: Header metrics ── -->
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:8px">
@@ -1037,9 +853,164 @@ canvas{width:100%!important}
   </div>
 </div>
 
-</div><!-- /crypto-dash-content -->
-
 </div><!-- /main-crypto -->
+
+<!-- ════════════════════════════════════════════════════
+     HOW TO USE TAB
+     ════════════════════════════════════════════════════ -->
+<div id="main-howto" style="display:none">
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem;opacity:.5">📈 Stock model</div>
+
+<div class="card">
+  <div class="ctitle">Weekly schedule</div>
+  <div class="c-filter-row">
+    <span style="font-weight:500">Monday morning</span>
+    <span style="opacity:.6;font-size:11px">Run model, upload CSV to dashboard</span>
+  </div>
+  <div class="c-filter-row" style="border-bottom:none">
+    <span style="font-weight:500">Friday</span>
+    <span style="opacity:.6;font-size:11px">Log exits before weekend, review performance</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Terminal command</div>
+  <div style="position:relative;margin-bottom:.5rem">
+    <pre id="stock-cmd-1" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">cd ~/Library/Mobile\ Documents/com\~apple\~CloudDocs/Trading && python3 stock_model/main.py</pre>
+    <button onclick="copyCmd('stock-cmd-1',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
+  </div>
+  <div style="font-size:11px;opacity:.5">Paste this into Terminal. Candidates CSV saves automatically.</div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Monday morning checklist</div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Run <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">main.py</code> from terminal (command above)</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Find the CSV in <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Trading/stock_model/Results/candidates/</code></span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Go to Stock tab → "Load Monday slate" → upload that CSV</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Review candidates, add trades you're taking via "Log a trade" form</span></div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Friday checklist</div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Check each open position — did target or stop trigger this week?</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Log exits for closed positions using the close button on each trade</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Archive the week via "Archive week" button before running next week's model</span></div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Where files save</div>
+  <div class="c-filter-row">
+    <span style="opacity:.6;font-size:12px">Candidate CSV</span>
+    <code style="font-size:11px;opacity:.7">Trading/stock_model/Results/candidates/</code>
+  </div>
+  <div class="c-filter-row" style="border-bottom:none">
+    <span style="opacity:.6;font-size:12px">Execution log</span>
+    <code style="font-size:11px;opacity:.7">Trading/stock_model/Results/execution_log.csv</code>
+  </div>
+</div>
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem;margin-top:1.5rem;opacity:.5">₿ Crypto model</div>
+
+<div class="card">
+  <div class="ctitle">Weekly schedule</div>
+  <div class="c-filter-row">
+    <span style="font-weight:500">Friday night</span>
+    <span style="opacity:.6;font-size:11px">Run main.py after market close — weekend signals</span>
+  </div>
+  <div class="c-filter-row">
+    <span style="font-weight:500">Monday night</span>
+    <span style="opacity:.6;font-size:11px">Run main.py — BTC daily signal check</span>
+  </div>
+  <div class="c-filter-row">
+    <span style="font-weight:500">Thursday night</span>
+    <span style="opacity:.6;font-size:11px">Run main.py — ETH daily signal check</span>
+  </div>
+  <div class="c-filter-row" style="border-bottom:none">
+    <span style="font-weight:500">Sunday night</span>
+    <span style="opacity:.6;font-size:11px">No command — log exits, close week, export backup</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Terminal command</div>
+  <div style="position:relative;margin-bottom:.5rem">
+    <pre id="crypto-cmd-1" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">cd ~/Library/Mobile\ Documents/com\~apple\~CloudDocs/Trading && python3 crypto_model/crypto/main.py</pre>
+    <button onclick="copyCmd('crypto-cmd-1',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
+  </div>
+  <div style="font-size:11px;opacity:.5">Paste into Terminal on Friday, Monday, and Thursday nights. Signal auto-writes to Firestore.</div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Friday night checklist</div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">1</span><span style="font-size:13px">Run <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">main.py</code> after market close (command above)</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">2</span><span style="font-size:13px">Check all three filters: MA20, ATR expansion, momentum</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">3</span><span style="font-size:13px">Signal auto-writes to Firestore — open Crypto tab, it's already there</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">4</span><span style="font-size:13px">Log LONG or NO_TRADE in dashboard — one row per instrument</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">5</span><span style="font-size:13px">If LONG: place stop-limit order in TradingView paper account</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#e5a020">6</span><span style="font-size:13px">Export JSON backup → save to <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Trading/crypto_model/</code></span></div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Sunday night checklist</div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">1</span><span style="font-size:13px">Check TradingView — did target or stop trigger?</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">2</span><span style="font-size:13px">If neither: TIME exit at current market price ~9pm ET</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">3</span><span style="font-size:13px">Log exit in dashboard — exit price, exit type, notes</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">4</span><span style="font-size:13px">Close week in Weekly tab with a short note</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px;color:#8899ff">5</span><span style="font-size:13px">Export JSON backup → save to <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Trading/crypto_model/</code> with today's date</span></div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Exit types explained</div>
+  <div class="c-filter-row">
+    <span><span class="badge c-badge-target" style="margin-right:8px">TARGET</span>2R level hit — TradingView take-profit triggered</span>
+  </div>
+  <div class="c-filter-row">
+    <span><span class="badge c-badge-stop" style="margin-right:8px">STOP</span>Stopped out — TradingView stop-loss triggered</span>
+  </div>
+  <div class="c-filter-row">
+    <span><span class="badge c-badge-time" style="margin-right:8px">TIME</span>Sunday close, neither target nor stop triggered (~78% of backtest trades)</span>
+  </div>
+  <div class="c-filter-row" style="border-bottom:none">
+    <span><span class="badge c-badge-open" style="margin-right:8px">MONDAY</span>Profitable at Sunday close — carry with breakeven stop, close Monday</span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Where files save</div>
+  <div class="c-filter-row">
+    <span style="opacity:.6;font-size:12px">Candidate CSV</span>
+    <code style="font-size:11px;opacity:.7">Trading/crypto_model/Results/crypto_candidates/</code>
+  </div>
+  <div class="c-filter-row">
+    <span style="opacity:.6;font-size:12px">Dashboard backup JSON</span>
+    <code style="font-size:11px;opacity:.7">Save manually to Trading/crypto_model/</code>
+  </div>
+  <div class="c-filter-row" style="border-bottom:none">
+    <span style="opacity:.6;font-size:12px">Firebase signals</span>
+    <code style="font-size:11px;opacity:.7">Auto-written by main.py — no upload needed</code>
+  </div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Phase 1 gates — all three must pass before real capital</div>
+  <div class="c-gate-row"><span style="font-size:18px;min-width:24px">①</span><span style="font-size:13px">8 weeks of paper trades logged</span></div>
+  <div class="c-gate-row"><span style="font-size:18px;min-width:24px">②</span><span style="font-size:13px">Live win rate above 50%</span></div>
+  <div class="c-gate-row"><span style="font-size:18px;min-width:24px">③</span><span style="font-size:13px">Positive after-tax expectancy at 32% tax rate</span></div>
+</div>
+
+<div class="card">
+  <div class="ctitle">Locked parameters — Phase 1</div>
+  <table class="c-params-tbl">
+    <tr><td style="opacity:.5;width:160px">Stop distance</td><td>1.25 × ATR14</td></tr>
+    <tr><td style="opacity:.5">Target</td><td>2.0R</td></tr>
+    <tr><td style="opacity:.5">Risk per trade</td><td>5% of equity ($25 at $500)</td></tr>
+    <tr><td style="opacity:.5">Max exposure</td><td>10% ($50 if both signal)</td></tr>
+    <tr><td style="opacity:.5">Rule</td><td style="color:#e55555;font-size:12px">No parameter changes before 8 weeks are complete</td></tr>
+  </table>
+</div>
+
+</div><!-- /main-howto -->
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -2813,38 +2784,16 @@ function copyCmd(id, btn) {
   });
 }
 
-/* ── stock sub-tab switching ── */
-function showStockTab(tab) {
-  const howto = document.getElementById('stock-howto-content');
-  const dash   = document.getElementById('stock-dash-content');
-  const btnH   = document.getElementById('stock-tab-howto');
-  const btnD   = document.getElementById('stock-tab-dash');
-  howto.style.display = tab === 'howto' ? '' : 'none';
-  dash.style.display  = tab === 'dash'  ? '' : 'none';
-  btnH.classList.toggle('active', tab === 'howto');
-  btnD.classList.toggle('active', tab === 'dash');
-}
-
-/* ── crypto sub-tab switching ── */
-function showCryptoTab(tab) {
-  const howto = document.getElementById('crypto-howto-content');
-  const dash   = document.getElementById('crypto-dash-content');
-  const btnH   = document.getElementById('crypto-tab-howto');
-  const btnD   = document.getElementById('crypto-tab-dash');
-  howto.style.display = tab === 'howto' ? '' : 'none';
-  dash.style.display  = tab === 'dash'  ? '' : 'none';
-  btnH.classList.toggle('active', tab === 'howto');
-  btnD.classList.toggle('active', tab === 'dash');
-}
-
 /* ── main tab switching ── */
 let _mainTab = 'stock';
 function showMainTab(tab) {
   _mainTab = tab;
   document.getElementById('main-stock').style.display  = tab === 'stock'  ? '' : 'none';
   document.getElementById('main-crypto').style.display = tab === 'crypto' ? '' : 'none';
+  document.getElementById('main-howto').style.display  = tab === 'howto'  ? '' : 'none';
   document.getElementById('tab-btn-stock').classList.toggle('active',  tab === 'stock');
   document.getElementById('tab-btn-crypto').classList.toggle('active', tab === 'crypto');
+  document.getElementById('tab-btn-howto').classList.toggle('active',  tab === 'howto');
   if (tab === 'crypto') { applyThemeCrypto(); buildCryptoEquityChart(); }
 }
 
