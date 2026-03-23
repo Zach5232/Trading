@@ -797,19 +797,13 @@ canvas{width:100%!important}
     <div class="ctitle" style="margin-bottom:0">Closed weeks</div>
     <button onclick="cCloseWeek()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid;cursor:pointer;background:#0d2e22;color:#1fba85;border-color:#1fba8555">+ close week</button>
   </div>
-  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
-    <table class="c-week-tbl" id="c-week-table">
-      <thead><tr>
-        <th>Week</th><th>Record</th><th>WR%</th><th>P&amp;L</th><th>R</th><th>Trades</th><th>Note</th>
-      </tr></thead>
-      <tbody id="c-week-body"><tr><td colspan="7" style="opacity:.5;padding:12px 6px">No weeks closed yet.</td></tr></tbody>
-    </table>
-  </div>
+  <div id="c-week-body"><div style="opacity:.5;font-size:13px;padding:8px 0">No weeks closed yet.</div></div>
 </div>
 
 <!-- ── I2: Weekly observations ── -->
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Weekly observations</div>
 <div class="card" style="margin-bottom:1rem">
+  <div class="ctitle" id="c-note-title" style="margin-bottom:.75rem">Week — Observations</div>
   <!-- read view: shown when a note exists -->
   <div id="c-note-read" style="display:none">
     <div id="c-note-display" style="font-size:13px;line-height:1.6;white-space:pre-wrap;margin-bottom:8px"></div>
@@ -3260,26 +3254,50 @@ function renderCryptoHistoryTable(closed, T) {
 }
 
 function renderCryptoWeeklyTable(T) {
-  const tbody = document.getElementById('c-week-body');
-  if (!tbody) return;
+  const container = document.getElementById('c-week-body');
+  if (!container) return;
   if (!cryptoWeeks.length) {
-    tbody.innerHTML = '<tr><td colspan="7" style="opacity:.5;padding:12px 6px">No weeks closed yet.</td></tr>';
+    container.innerHTML = '<div style="opacity:.5;font-size:13px;padding:8px 0">No weeks closed yet.</div>';
     return;
   }
-  tbody.innerHTML = [...cryptoWeeks].sort((a,b)=>a.week-b.week).map(w => {
+  container.innerHTML = [...cryptoWeeks].sort((a,b)=>a.week-b.week).map(w => {
     const pnlColor = (w.pnl || 0) >= 0 ? T.win : T.loss;
     const rColor   = (w.totalR || 0) >= 0 ? T.win : T.loss;
     const wr = w.trades ? Math.round((w.wins||0) / w.trades * 100) : 0;
-    return `<tr>
-      <td style="font-weight:500">Wk ${w.week}</td>
-      <td>${(w.wins||0)}W / ${(w.losses||0)}L</td>
-      <td style="color:${wr >= 50 ? T.win : T.loss}">${wr}%</td>
-      <td style="color:${pnlColor};font-weight:500">${w.pnl != null ? cFmt$(w.pnl) : '—'}</td>
-      <td style="color:${rColor};font-weight:500">${w.totalR != null ? cFmtR(w.totalR) : '—'}</td>
-      <td style="opacity:.6">${w.trades || 0}</td>
-      <td style="opacity:.6;font-size:11px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${w.note || ''}</td>
-    </tr>`;
+    const wkTrades = cryptoTrades.filter(t => t.week === w.week && t.direction === 'LONG');
+    const tradeNotes = wkTrades.map(t => (t.weekend_notes||'').trim()).filter(Boolean);
+    const obs = (w.observation || '').trim();
+    const closeNote = (w.note || '').trim();
+    const hasDetail = obs || closeNote || tradeNotes.length;
+    return `
+    <div style="border-bottom:.5px solid rgba(255,255,255,0.06)">
+      <div onclick="cToggleWeekDetail(${w.week})" style="display:grid;grid-template-columns:56px 90px 52px 80px 72px 44px 1fr 20px;gap:6px;align-items:center;padding:8px 0;cursor:pointer;font-size:12px;user-select:none">
+        <span style="font-weight:500">Wk ${w.week}</span>
+        <span>${(w.wins||0)}W / ${(w.losses||0)}L</span>
+        <span style="color:${wr >= 50 ? T.win : T.loss}">${wr}%</span>
+        <span style="color:${pnlColor};font-weight:500">${w.pnl != null ? cFmt$(w.pnl) : '—'}</span>
+        <span style="color:${rColor};font-weight:500">${w.totalR != null ? cFmtR(w.totalR) : '—'}</span>
+        <span style="opacity:.6">${w.trades || 0}</span>
+        <span style="opacity:.5;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${closeNote}</span>
+        <span id="c-wk-chevron-${w.week}" style="opacity:.4;font-size:10px;text-align:right">${hasDetail ? '▸' : ''}</span>
+      </div>
+      <div id="c-wk-detail-${w.week}" style="display:none;padding:8px 0 12px;border-top:.5px solid rgba(255,255,255,0.05)">
+        ${closeNote ? `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Close note</div><div style="font-size:12px;line-height:1.6;white-space:pre-wrap">${closeNote}</div></div>` : ''}
+        ${obs ? `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Weekly observation</div><div style="font-size:12px;line-height:1.6;white-space:pre-wrap">${obs}</div></div>` : ''}
+        ${tradeNotes.length ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Trade notes</div>${tradeNotes.map(n=>`<div style="font-size:12px;line-height:1.6;opacity:.8;margin-bottom:3px">• ${n}</div>`).join('')}</div>` : ''}
+        ${!hasDetail ? `<div style="font-size:12px;opacity:.4">No notes for this week.</div>` : ''}
+      </div>
+    </div>`;
   }).join('');
+}
+
+function cToggleWeekDetail(wkNum) {
+  const detail   = document.getElementById('c-wk-detail-' + wkNum);
+  const chevron  = document.getElementById('c-wk-chevron-' + wkNum);
+  if (!detail) return;
+  const open = detail.style.display === 'none';
+  detail.style.display = open ? '' : 'none';
+  if (chevron) chevron.textContent = open ? '▾' : '▸';
 }
 
 function renderCryptoGatesSection(closed, T) {
@@ -3660,10 +3678,17 @@ function cEditWeeklyNote() {
 async function cSaveWeeklyNote() {
   const note = document.getElementById('c-weekly-note').value;
   const status = document.getElementById('c-note-status');
+  const wkNum = cryptoConfig.current_week || 1;
   status.textContent = 'saving…';
   try {
-    await userRef.collection('crypto_config').doc('weekly_note').set({ note, updated_at: firebase.firestore.FieldValue.serverTimestamp() });
+    await dbWrite(userRef.collection('crypto_weeks').doc('week-' + wkNum).set(
+      { observation: note, observation_updated_at: firebase.firestore.FieldValue.serverTimestamp() },
+      { merge: true }
+    ));
     status.textContent = '';
+    // Refresh in-memory cryptoWeeks entry so expandable rows stay current
+    const existing = cryptoWeeks.find(w => w.week === wkNum);
+    if (existing) existing.observation = note;
     if (note.trim()) {
       cShowNoteReadView(note);
     }
@@ -3674,15 +3699,14 @@ async function cSaveWeeklyNote() {
 }
 
 async function cLoadWeeklyNote() {
+  const wkNum = cryptoConfig.current_week || 1;
+  const titleEl = document.getElementById('c-note-title');
+  if (titleEl) titleEl.textContent = 'Week ' + wkNum + ' Observations';
   try {
-    const snap = await userRef.collection('crypto_config').doc('weekly_note').get();
-    if (snap.exists) {
-      const note = snap.data().note || '';
-      if (note.trim()) {
-        cShowNoteReadView(note);
-      } else {
-        cShowNoteEditView('');
-      }
+    const snap = await userRef.collection('crypto_weeks').doc('week-' + wkNum).get();
+    const note = (snap.exists && snap.data().observation) || '';
+    if (note.trim()) {
+      cShowNoteReadView(note);
     } else {
       cShowNoteEditView('');
     }
@@ -3738,9 +3762,34 @@ async function cExportJSON() {
 function cExportCSV() {
   const closed = cryptoTrades.filter(t => t.exit_type);
   if (!closed.length) { alert('No closed trades to export.'); return; }
-  const headers = ['date','instrument','direction','above_ma20','entry_price','stop_price','target_price','units','exit_price','exit_type','exit_date','profit_loss','R_multiple','week','weekend_notes'];
-  const rows = closed.map(t => headers.map(h => t[h] != null ? t[h] : '').join(','));
-  const blob = new Blob([headers.join(',') + '\n' + rows.join('\n')], { type: 'text/csv' });
+  // Build a lookup: weekNum → { close_note, observation, trade_notes[] }
+  const weekMeta = {};
+  cryptoWeeks.forEach(w => {
+    weekMeta[w.week] = { close_note: w.note || '', observation: w.observation || '' };
+  });
+  cryptoTrades.filter(t => t.exit_type && (t.weekend_notes||'').trim()).forEach(t => {
+    if (!weekMeta[t.week]) weekMeta[t.week] = { close_note: '', observation: '' };
+    weekMeta[t.week].trade_notes = weekMeta[t.week].trade_notes || [];
+    weekMeta[t.week].trade_notes.push(t.weekend_notes.trim());
+  });
+
+  const tradeHeaders = ['date','instrument','direction','above_ma20','entry_price','stop_price','target_price','units','exit_price','exit_type','exit_date','profit_loss','R_multiple','week','weekend_notes'];
+  const extraHeaders = ['close_note','observation','trade_notes'];
+  const allHeaders = [...tradeHeaders, ...extraHeaders];
+
+  const esc = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const rows = closed.map(t => {
+    const meta = weekMeta[t.week] || {};
+    const base = tradeHeaders.map(h => esc(t[h] ?? ''));
+    const extra = [
+      esc(meta.close_note || ''),
+      esc(meta.observation || ''),
+      esc((meta.trade_notes || []).join(' | ')),
+    ];
+    return [...base, ...extra].join(',');
+  });
+
+  const blob = new Blob([allHeaders.join(',') + '\n' + rows.join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'crypto_trades_' + new Date().toISOString().substring(0,10) + '.csv';
