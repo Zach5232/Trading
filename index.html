@@ -1118,6 +1118,7 @@ db.enablePersistence({synchronizeTabs:false}).catch(e=>{
 
 let userRef=null;          // db.collection('users').doc(uid) — set after auth
 let notesCache={};         // { [weekNum:string]: text } preloaded at startup
+let notesSavedState={};    // { [weekNum:string]: true } tracks which weeks have been explicitly saved
 let noteSaveTimer=null;
 let _savingCount=0;
 let _booted=false;
@@ -1275,6 +1276,28 @@ function saveCurrentNote(text){
     if(!userRef)return;
     dbWrite(userRef.collection('notes').doc(String(weekNum)).set({text:t}));
   },1000);
+}
+
+function commitNote(){
+  const el=document.getElementById('week-note-input');
+  if(!el)return;
+  const text=el.value.trim();
+  if(!text)return;
+  saveCurrentNote(text);
+  notesSavedState[String(weekNum)]=true;
+  renderNotesCard();
+}
+
+function editNote(wk){
+  notesSavedState[String(wk)]=false;
+  renderNotesCard();
+  // If editing current week, scroll textarea into view
+  if(wk===weekNum){
+    setTimeout(()=>{
+      const el=document.getElementById('week-note-input');
+      if(el){el.focus();el.scrollIntoView({behavior:'smooth',block:'center'});}
+    },50);
+  }
 }
 
 /* ── taglines ── */
@@ -2037,36 +2060,77 @@ function renderNotesCard(){
   const el=document.getElementById('notes-card-body');
   if(!el)return;
 
-  // Current week input
   const curNote=notesCache[String(weekNum)]||'';
-  let html='<div style="margin-bottom:1rem">'
-    +'<label style="font-size:11px;color:'+T.textMuted+';display:block;margin-bottom:4px">Week '+weekNum+' — note</label>'
-    +'<textarea id="week-note-input" rows="3" maxlength="500" placeholder="Any notes for this week…"'
-    +' style="width:100%;font-size:12px;padding:5px 8px;border-radius:7px;border:.5px solid '+T.btnBorder+';background:'+(T.inputBg||T.btnBg)+';color:'+T.textPrimary+';font-style:italic;box-sizing:border-box;pointer-events:auto;position:relative;z-index:1;resize:vertical;font-family:inherit"'
-    +' oninput="saveCurrentNote(this.value)">'+curNote+'</textarea>'
-    +'</div>';
+  const isSaved=notesSavedState[String(weekNum)]&&curNote.length>0;
+  let html='';
 
-  // Past weeks with saved notes
+  if(isSaved){
+    // Show saved note for current week with Edit button
+    html+='<div style="margin-bottom:1rem">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
+      +'<label style="font-size:11px;color:'+T.textMuted+'">Week '+weekNum+' — note</label>'
+      +'<button onclick="editNote('+weekNum+')" style="font-size:11px;padding:3px 8px;border-radius:6px;border:.5px solid '+T.btnBorder+';background:'+T.btnBg+';color:'+T.textPrimary+';cursor:pointer">✏️ Edit</button>'
+      +'</div>'
+      +'<div style="padding:8px 10px;border-radius:6px;background:'+T.metricBg+';font-size:12px;color:'+T.textPrimary+';font-style:italic;line-height:1.5;white-space:pre-wrap">'+curNote+'</div>'
+      +'</div>';
+  } else {
+    // Show textarea + Save button
+    html+='<div style="margin-bottom:1rem">'
+      +'<label style="font-size:11px;color:'+T.textMuted+';display:block;margin-bottom:4px">Week '+weekNum+' — note</label>'
+      +'<textarea id="week-note-input" rows="4" maxlength="1000" placeholder="Add your weekly notes here, then click Save…"'
+      +' style="width:100%;font-size:12px;padding:5px 8px;border-radius:7px;border:.5px solid '+T.btnBorder+';background:'+(T.inputBg||T.btnBg)+';color:'+T.textPrimary+';font-style:italic;box-sizing:border-box;resize:vertical;font-family:inherit"'
+      +' oninput="saveCurrentNote(this.value)">'+curNote+'</textarea>'
+      +'<div style="display:flex;justify-content:flex-end;margin-top:6px">'
+      +'<button onclick="commitNote()" style="font-size:12px;padding:5px 14px;border-radius:7px;border:.5px solid '+T.btnBorder+';background:'+T.btnBg+';color:'+T.textPrimary+';cursor:pointer;font-weight:500">Save note</button>'
+      +'</div>'
+      +'</div>';
+  }
+
+  // Past weeks
   const pastWeeks=[...weeks].reverse().filter(w=>notesCache[String(w.week)]);
   if(pastWeeks.length){
     html+='<div style="font-size:10px;color:'+T.textMuted+';text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Past weeks</div>';
     pastWeeks.forEach(w=>{
       const note=notesCache[String(w.week)]||'';
       const pnlColor=w.pnl>0?T.win:T.loss;
+      const isEditing=notesSavedState[String(w.week)]===false;
       html+='<div style="border-bottom:.5px solid '+T.btnBorder+';padding:6px 0">'
-        +'<div onclick="toggleNoteWeek('+w.week+')" style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;user-select:none">'
-        +'<div style="display:flex;gap:12px;align-items:center">'
+        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
+        +'<div onclick="toggleNoteWeek('+w.week+')" style="display:flex;gap:12px;align-items:center;cursor:pointer;user-select:none;flex:1">'
         +'<span style="font-size:12px;font-weight:500;color:'+T.textPrimary+'">Week '+w.week+'</span>'
         +'<span style="font-size:10px;color:'+T.textMuted+'">'+(w.regime||'—')+'</span>'
         +'<span style="font-size:12px;color:'+pnlColor+';font-weight:500">'+fmtP(w.pnl)+'</span>'
         +'</div>'
+        +'<div style="display:flex;gap:6px;align-items:center">'
+        +(isEditing
+          ? '<button onclick="commitPastNote('+w.week+')" style="font-size:10px;padding:3px 8px;border-radius:6px;border:.5px solid '+T.btnBorder+';background:'+T.btnBg+';color:'+T.win+';cursor:pointer">Save</button>'
+          : '<button onclick="editNote('+w.week+')" style="font-size:10px;padding:3px 8px;border-radius:6px;border:.5px solid '+T.btnBorder+';background:'+T.btnBg+';color:'+T.textPrimary+';cursor:pointer">✏️ Edit</button>'
+        )
         +'<span id="note-toggle-'+w.week+'" style="font-size:10px;color:'+T.textMuted+'">▼</span>'
         +'</div>'
-        +'<div id="note-content-'+w.week+'" style="display:none;margin-top:6px;padding:8px 10px;border-radius:6px;background:'+T.metricBg+';font-size:12px;color:'+T.textPrimary+';font-style:italic;line-height:1.5;white-space:pre-wrap">'+note+'</div>'
+        +'</div>'
+        +(isEditing
+          ? '<textarea id="past-note-input-'+w.week+'" rows="4" maxlength="1000"'
+            +' style="width:100%;font-size:12px;padding:5px 8px;border-radius:7px;border:.5px solid '+T.btnBorder+';background:'+(T.inputBg||T.btnBg)+';color:'+T.textPrimary+';font-style:italic;box-sizing:border-box;resize:vertical;font-family:inherit;margin-top:4px"'
+            +' oninput="notesCache[\''+w.week+'\']=this.value">'+note+'</textarea>'
+          : '<div id="note-content-'+w.week+'" style="display:none;margin-top:4px;padding:8px 10px;border-radius:6px;background:'+T.metricBg+';font-size:12px;color:'+T.textPrimary+';font-style:italic;line-height:1.5;white-space:pre-wrap">'+note+'</div>'
+        )
         +'</div>';
     });
   }
   el.innerHTML=html;
+}
+
+function commitPastNote(wk){
+  const el=document.getElementById('past-note-input-'+wk);
+  if(!el)return;
+  const text=el.value.trim();
+  notesCache[String(wk)]=text;
+  notesSavedState[String(wk)]=true;
+  if(userRef){
+    dbWrite(userRef.collection('notes').doc(String(wk)).set({text}));
+  }
+  renderNotesCard();
 }
 
 function exportNotesCSV(){
