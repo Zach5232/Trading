@@ -782,9 +782,9 @@ canvas{width:100%!important}
     <table class="c-trade-tbl" id="c-hist-table">
       <thead><tr>
         <th>Date</th><th>Inst</th><th>Entry</th><th>Stop</th><th>Target</th>
-        <th>Exit</th><th>Type</th><th>P&amp;L</th><th>R</th><th>Wk</th><th></th>
+        <th>Exit</th><th>Type</th><th>P&amp;L</th><th>R</th><th>Wk</th><th></th><th></th>
       </tr></thead>
-      <tbody id="c-hist-body"><tr><td colspan="11" style="opacity:.5;padding:12px 6px">No closed trades yet.</td></tr></tbody>
+      <tbody id="c-hist-body"><tr><td colspan="12" style="opacity:.5;padding:12px 6px">No closed trades yet.</td></tr></tbody>
     </table>
   </div>
 </div>
@@ -2958,13 +2958,12 @@ function renderCryptoHistoryTable(closed, T) {
   const tbody = document.getElementById('c-hist-body');
   if (!tbody) return;
   if (!closed.length) {
-    tbody.innerHTML = '<tr><td colspan="11" style="opacity:.5;padding:12px 6px">No closed trades yet.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" style="opacity:.5;padding:12px 6px">No closed trades yet.</td></tr>';
     return;
   }
   tbody.innerHTML = closed.map(t => {
     const pnlColor = (t.profit_loss || 0) >= 0 ? T.win : T.loss;
     const rColor   = (t.R_multiple  || 0) >= 0 ? T.win : T.loss;
-    const isBTC = t.instrument === 'BTC-USD';
     return `<tr>
       <td style="white-space:nowrap">${t.date || '—'}</td>
       <td>${cBadgeInst(t.instrument)}</td>
@@ -2976,6 +2975,7 @@ function renderCryptoHistoryTable(closed, T) {
       <td style="color:${pnlColor};font-weight:500">${t.profit_loss != null ? cFmt$(t.profit_loss) : '—'}</td>
       <td style="color:${rColor};font-weight:500">${t.R_multiple != null ? cFmtR(t.R_multiple) : '—'}</td>
       <td style="opacity:.5">${t.week || '—'}</td>
+      <td><button onclick="cEditTrade('${t.id}')" title="Edit trade" style="font-size:13px;padding:0;border:none;background:transparent;cursor:pointer;opacity:.4;color:${T.textMuted}" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=.4">✏️</button></td>
       <td><button onclick="cDeleteTrade('${t.id}')" style="font-size:10px;padding:2px 6px;cursor:pointer;border-radius:5px;border:.5px solid;color:${T.loss};border-color:${T.loss}44;background:transparent;opacity:.6" title="delete">✕</button></td>
     </tr>`;
   }).join('');
@@ -3271,6 +3271,89 @@ async function cCloseTrade() {
     errEl.style.color = T.loss;
     errEl.textContent = 'Error: ' + e.message;
   }
+}
+
+function cEditTrade(id) {
+  const t = cryptoTrades.find(tr => tr.id === id);
+  if (!t) return;
+  const T = THEME;
+
+  const existing = document.getElementById('c-edit-trade-overlay');
+  if (existing) existing.remove();
+
+  const inp = (id, label, val, type='text') =>
+    `<div><label style="font-size:11px;color:${T.textMuted};display:block;margin-bottom:4px">${label}</label>
+     <input id="${id}" type="${type}" step="any" value="${val ?? ''}"
+       style="width:100%;padding:8px 10px;font-size:13px;border-radius:7px;border:.5px solid ${T.btnBorder};background:${T.inputBg};color:${T.textPrimary};box-sizing:border-box"></div>`;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'c-edit-trade-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:16px';
+
+  overlay.innerHTML = `
+    <div style="background:${T.cardBg};border:1px solid ${T.cardBorder};border-radius:14px;padding:28px 28px 24px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,0.5)">
+      <div style="font-size:11px;font-weight:600;color:${T.textMuted};text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px">Edit Trade</div>
+      <div style="font-size:17px;font-weight:700;color:${T.textPrimary};margin-bottom:20px">${t.instrument} · Wk ${t.week || '—'}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        ${inp('ce-date',    'Entry date',   t.date)}
+        <div><label style="font-size:11px;color:${T.textMuted};display:block;margin-bottom:4px">Instrument</label>
+          <select id="ce-inst" style="width:100%;padding:8px 10px;font-size:13px;border-radius:7px;border:.5px solid ${T.btnBorder};background:${T.inputBg};color:${T.textPrimary};box-sizing:border-box">
+            <option value="BTC-USD" ${t.instrument==='BTC-USD'?'selected':''}>BTC-USD</option>
+            <option value="ETH-USD" ${t.instrument==='ETH-USD'?'selected':''}>ETH-USD</option>
+          </select></div>
+        ${inp('ce-entry',  'Entry price',  (+t.entry_price ||0).toFixed(2),  'number')}
+        ${inp('ce-stop',   'Stop price',   (+t.stop_price  ||0).toFixed(2),  'number')}
+        ${inp('ce-target', 'Target price', (+t.target_price||0).toFixed(2),  'number')}
+        ${inp('ce-exit',   'Exit price',   (+t.exit_price  ||0).toFixed(2),  'number')}
+        <div><label style="font-size:11px;color:${T.textMuted};display:block;margin-bottom:4px">Exit type</label>
+          <select id="ce-exit-type" style="width:100%;padding:8px 10px;font-size:13px;border-radius:7px;border:.5px solid ${T.btnBorder};background:${T.inputBg};color:${T.textPrimary};box-sizing:border-box">
+            <option value="TIME"   ${t.exit_type==='TIME'  ?'selected':''}>TIME</option>
+            <option value="TARGET" ${t.exit_type==='TARGET'?'selected':''}>TARGET</option>
+            <option value="STOP"   ${t.exit_type==='STOP'  ?'selected':''}>STOP</option>
+          </select></div>
+        ${inp('ce-exit-date', 'Exit date', t.exit_date || '')}
+        ${inp('ce-r',   'R multiple', t.R_multiple  != null ? (+t.R_multiple ).toFixed(3) : '', 'number')}
+        ${inp('ce-pnl', 'P&L ($)',    t.profit_loss != null ? (+t.profit_loss).toFixed(2) : '', 'number')}
+        ${inp('ce-week','Week #',     t.week || '', 'number')}
+      </div>
+      <div style="display:flex;gap:10px;margin-top:8px">
+        <button id="ce-cancel" style="flex:1;padding:10px;border-radius:8px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${T.textPrimary};cursor:pointer;font-size:13px">Cancel</button>
+        <button id="ce-save"   style="flex:2;padding:10px;border-radius:8px;border:none;background:${T.win};color:#fff;cursor:pointer;font-size:13px;font-weight:600">Save Changes</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.getElementById('ce-entry').focus();
+
+  document.getElementById('ce-cancel').onclick = () => overlay.remove();
+  overlay.addEventListener('keydown', e => { if (e.key === 'Escape') overlay.remove(); });
+
+  document.getElementById('ce-save').onclick = async () => {
+    const g = id => document.getElementById(id);
+    const updates = {
+      date:         g('ce-date').value.trim(),
+      instrument:   g('ce-inst').value,
+      entry_price:  parseFloat(g('ce-entry').value)   || 0,
+      stop_price:   parseFloat(g('ce-stop').value)    || 0,
+      target_price: parseFloat(g('ce-target').value)  || 0,
+      exit_price:   parseFloat(g('ce-exit').value)    || 0,
+      exit_type:    g('ce-exit-type').value,
+      exit_date:    g('ce-exit-date').value.trim(),
+      R_multiple:   parseFloat(g('ce-r').value),
+      profit_loss:  parseFloat(g('ce-pnl').value),
+      week:         parseInt(g('ce-week').value)       || t.week,
+    };
+    if (!updates.date) { alert('Entry date is required.'); return; }
+    const btn = g('ce-save');
+    btn.textContent = 'Saving…'; btn.disabled = true;
+    try {
+      await dbWrite(userRef.collection('crypto_trades').doc(id).update(updates));
+      overlay.remove();
+    } catch(e) {
+      btn.textContent = 'Save Changes'; btn.disabled = false;
+      alert('Save error: ' + e.message);
+    }
+  };
 }
 
 async function cDeleteTrade(id) {
