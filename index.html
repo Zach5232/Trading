@@ -517,7 +517,8 @@ canvas{width:100%!important}
 <div class="card" style="margin-bottom:1rem">
   <div class="card-hdr">
     <div class="ctitle">Weekly notes</div>
-    <button onclick="exportNotesCSV()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid;cursor:pointer">Export notes</button>
+    <button onclick="exportStockJSON()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid;cursor:pointer">Export backup</button>
+    <button onclick="exportNotesCSV()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid;cursor:pointer">Export notes CSV</button>
   </div>
   <div id="notes-card-body"></div>
 </div>
@@ -2082,6 +2083,27 @@ function exportNotesCSV(){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
   a.download='weekly_notes_'+new Date().toISOString().slice(0,10)+'.csv';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+function exportStockJSON(){
+  const payload={
+    exported_at: new Date().toISOString(),
+    current_week: weekNum,
+    regime: regime,
+    trades_open: trades.map(t=>({...t})),
+    trades_closed: closed.map(t=>({...t})),
+    weeks: weeks.map(w=>({
+      ...w,
+      note: notesCache[String(w.week)]||''
+    })),
+    current_week_note: notesCache[String(weekNum)]||''
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='stock_backup_'+new Date().toISOString().slice(0,10)+'.json';
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
 }
