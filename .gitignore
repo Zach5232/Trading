@@ -1,0 +1,28 @@
+# Credentials — never commit
+firebase_config.json
+service_account.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated outputs — regenerable, no need to version
+stock_model/Results/candidates/
+stock_model/Results/backtest/
+stock_model/Data/backtest_cache/
+stock_model/Data/raw_data/
+crypto_model/Results/crypto_candidates/
+crypto_model/Results/crypto_backtest/
+
+# Keep these tracked
+!stock_model/Results/execution_log.csv
+!stock_model/Results/error_log.csv

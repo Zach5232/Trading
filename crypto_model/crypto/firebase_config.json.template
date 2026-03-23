@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy to firebase_config.json and fill in real values. Never commit firebase_config.json.",
+  "project_id": "stock-model-42fb2",
+  "api_key": "AIzaSyDrg2CZGDEA4OomPfKGC-Yew6BUR6VFXAw",
+  "uid": "g5yTfHd0KaRt9TZER3nPqCk4CgS2",
+  "collection_path": "users/{uid}/crypto_signals"
+}

@@ -1,0 +1,1 @@
+trade_id,ticker,direction,entry_date,exit_date,holding_days,entry_price,exit_price,shares,position_size,stop_price,target_price,pnl_dollars,pnl_pct,exit_reason,r_multiple,signal_score,rsi_14,ret_1w,ret_3w,atr_14,atr_pct,spy_trend,vix_bucket,breadth_pct_above_50ma,notes

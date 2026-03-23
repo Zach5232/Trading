@@ -1,0 +1,52 @@
+{
+  "trades": [
+    {
+      "id": 1774058727264,
+      "date": "2026-03-21",
+      "instrument": "BTC",
+      "direction": "LONG",
+      "above_ma20": "yes",
+      "entry_price": 70599.49,
+      "stop_price": 67414.49,
+      "target_price": 76912.5,
+      "units": 0.0078,
+      "exit_price": 67412,
+      "exit_type": "TIME",
+      "exit_date": "2026-03-22",
+      "profit_loss": -24.86242200000004,
+      "R_multiple": -1.0007817896389342,
+      "weekend_notes": "",
+      "week": 1
+    },
+    {
+      "id": 1774059041002,
+      "date": "2026-03-21",
+      "instrument": "ETH",
+      "direction": "LONG",
+      "above_ma20": "yes",
+      "entry_price": 2146.96,
+      "stop_price": 2017.43,
+      "target_price": 2417.11,
+      "units": 0.18765,
+      "exit_price": 2050.12,
+      "exit_type": "TIME",
+      "exit_date": "2026-03-22",
+      "profit_loss": -18.172026000000027,
+      "R_multiple": -0.7476260325793266,
+      "weekend_notes": "",
+      "week": 1
+    }
+  ],
+  "weeks": [
+    {
+      "week": 1,
+      "trades": 2,
+      "wins": 0,
+      "losses": 2,
+      "pnl": -43.03444800000007,
+      "totalR": -1.7484078222182609,
+      "note": "Both TIME exits, both small losses. Combined P&L roughly -$40. No stops triggered, no targets hit — the system sat through a down week and exited at Sunday close exactly as designed. 78% TIME exit rate in the backtest means this is the normal outcome, not a failure."
+    }
+  ],
+  "currentWeek": 2
+}

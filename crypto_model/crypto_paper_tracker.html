@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crypto Paper Trade Tracker — Phase 1</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0f0f0f;color:#e8e6e0;padding:1.25rem;max-width:1000px;margin:0 auto}
+.card{background:#1a1a1a;border:0.5px solid rgba(255,255,255,0.08);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem}
+.grid-4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:1rem}
+.grid-3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:1rem}
+.metric{background:#222220;border:0.5px solid rgba(255,255,255,0.06);border-radius:8px;padding:.85rem 1rem}
+.metric .lbl{font-size:12px;color:#555550;margin-bottom:4px;text-transform:uppercase;letter-spacing:.04em}
+.metric .val{font-size:22px;font-weight:500}
+.metric .sub{font-size:11px;color:#555550;margin-top:3px}
+label{font-size:12px;color:#555550;display:block;margin-bottom:4px}
+input,select,textarea{width:100%;font-size:13px;padding:6px 8px;border-radius:8px;border:0.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0}
+textarea{resize:vertical;min-height:52px}
+.form-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:8px}
+.badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:8px;font-weight:500}
+.badge-long{background:#0d2e22;color:#1fba85}
+.badge-no_trade{background:#222220;color:#555550}
+.badge-btc{background:#2e1800;color:#F7931A}
+.badge-eth{background:#1a1030;color:#9B8CDB}
+.badge-target{background:#0d2e22;color:#1fba85}
+.badge-stop{background:#2e0d0d;color:#e55555}
+.badge-time{background:#222220;color:#555550}
+.badge-open{background:#2e2000;color:#e5a020}
+.trade-row{display:grid;grid-template-columns:88px 48px 72px 72px 72px 72px 62px 58px 62px 28px;gap:5px;align-items:center;padding:7px 0;border-bottom:0.5px solid rgba(255,255,255,0.06);font-size:12px}
+.trade-row:last-child{border-bottom:none}
+.trade-hdr{display:grid;grid-template-columns:88px 48px 72px 72px 72px 72px 62px 58px 62px 28px;gap:5px;padding:5px 0 7px;border-bottom:0.5px solid rgba(255,255,255,0.12);font-size:11px;color:#555550;text-transform:uppercase;letter-spacing:.04em}
+.week-row{display:grid;grid-template-columns:50px 64px 52px 58px 52px 56px 1fr;gap:8px;align-items:center;padding:6px 0;border-bottom:0.5px solid rgba(255,255,255,0.06);font-size:12px}
+.week-row:last-child{border-bottom:none}
+.week-hdr{display:grid;grid-template-columns:50px 64px 52px 58px 52px 56px 1fr;gap:8px;padding:4px 0 6px;border-bottom:0.5px solid rgba(255,255,255,0.12);font-size:11px;color:#555550;text-transform:uppercase;letter-spacing:.04em}
+.gate{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:0.5px solid rgba(255,255,255,0.06)}
+.gate:last-child{border-bottom:none}
+.gate-dot{width:20px;height:20px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500}
+.gate-pass{background:#0d2e22;color:#1fba85}
+.gate-fail{background:#2e0d0d;color:#e55555}
+.section-label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#555550;margin-bottom:10px}
+.phase-banner{padding:10px 14px;border-radius:8px;margin-bottom:1rem;font-size:13px;display:flex;align-items:center;gap:10px}
+.phase-pass{background:#0d2e22;border:0.5px solid #1fba85}
+.phase-warn{background:#2e1e00;border:0.5px solid #e5a020;color:#e5a020}
+.equity-bar-wrap{height:5px;background:#2a2a28;border-radius:3px;margin-top:6px}
+.equity-bar{height:5px;border-radius:3px;transition:width .4s}
+.tab-bar{display:flex;gap:6px;margin-bottom:1rem;flex-wrap:wrap}
+.tab{font-size:12px;padding:5px 14px;border-radius:20px;cursor:pointer;border:0.5px solid rgba(255,255,255,0.12);background:transparent;color:#555550}
+.tab.active{background:#e8e6e0;color:#0f0f0f;border-color:#e8e6e0}
+.err{font-size:12px;color:#e55555;margin-top:5px;min-height:16px}
+.import-area{border:1px dashed rgba(255,255,255,0.15);border-radius:8px;padding:1.25rem;text-align:center;cursor:pointer;font-size:13px;color:#555550;margin-bottom:8px}
+.import-area:hover{background:#222220}
+.how-step{display:flex;gap:12px;padding:10px 0;border-bottom:0.5px solid rgba(255,255,255,0.06)}
+.how-step:last-child{border-bottom:none}
+.how-num{width:24px;height:24px;border-radius:50%;background:#222220;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:500;color:#555550}
+.how-body{font-size:13px;line-height:1.6}
+.how-title{font-weight:500;margin-bottom:2px}
+.how-sub{color:#555550;font-size:12px}
+.warn-box{background:#2e1e00;border:0.5px solid #e5a020;border-radius:8px;padding:.75rem 1rem;font-size:13px;color:#e5a020;margin-bottom:.75rem}
+.info-box{background:#0d1a2e;border:0.5px solid #378ADD;border-radius:8px;padding:.75rem 1rem;font-size:13px;color:#85B7EB;margin-bottom:.75rem}
+.drop-zone{border:2px dashed rgba(255,255,255,0.18);border-radius:10px;padding:1.75rem 1.25rem;text-align:center;transition:border-color .15s,background .15s;background:#141414;user-select:none}
+.drop-zone.drag-over{border-color:#1fba85;background:#091a11}
+.drop-zone .drop-icon{font-size:2rem;margin-bottom:.5rem;line-height:1}
+.drop-zone .drop-main{font-size:14px;font-weight:500;color:#e8e6e0;margin-bottom:.35rem}
+.drop-zone .drop-sub{font-size:12px;color:#555550}
+.sig-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:.85rem}
+@media(max-width:560px){.sig-grid{grid-template-columns:1fr}}
+.sig-card{border:0.5px solid rgba(255,255,255,0.08);border-radius:10px;padding:.85rem 1rem;background:#1e1e1c}
+.sig-card.sig-long{border-color:rgba(31,186,133,.3);background:#091a11}
+.sig-card.sig-no_trade{opacity:.5}
+.sig-row{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;font-size:12px;border-bottom:0.5px solid rgba(255,255,255,0.05)}
+.sig-row:last-child{border-bottom:none}
+.sig-lbl{color:#555550}
+.sig-val{font-weight:500;text-align:right}
+.fill-btn{font-size:11px;padding:4px 0;margin-top:.65rem;border-color:rgba(31,186,133,.35);color:#1fba85;background:transparent;width:100%}
+.fill-btn:hover{background:#0d2e22}
+button{cursor:pointer;border-radius:8px;border:0.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;font-size:13px;padding:6px 14px}
+button:hover{filter:brightness(1.15)}
+@media(max-width:640px){
+  .grid-4,.grid-3{grid-template-columns:1fr 1fr}
+  .form-grid{grid-template-columns:1fr 1fr}
+  .trade-row,.trade-hdr{grid-template-columns:72px 44px 60px 60px 54px 46px 1fr 24px;font-size:11px}
+  .trade-row>:nth-child(5),.trade-hdr>:nth-child(5),.trade-row>:nth-child(8),.trade-hdr>:nth-child(8),.trade-row>:nth-child(9),.trade-hdr>:nth-child(9){display:none}
+}
+</style>
+</head>
+<body>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.1rem">
+  <div>
+    <span style="font-size:18px;font-weight:500">Crypto paper tracker</span>
+    <span style="font-size:12px;color:#555550;margin-left:10px">Phase 1 — MA20 weekend system</span>
+  </div>
+  <span style="font-size:12px;color:#555550" id="last-saved">not saved yet</span>
+</div>
+
+<!-- ── This Weekend panel ─────────────────────────────────────────── -->
+<div class="card" style="margin-bottom:1rem">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+    <div class="section-label" style="margin-bottom:0">This Weekend</div>
+    <span id="csv-loaded-label" style="font-size:11px;color:#555550"></span>
+  </div>
+  <div id="csv-drop-zone" class="drop-zone">
+    <div class="drop-icon">&#11015;</div>
+    <div class="drop-main">Drop <code style="font-size:13px;color:#e5a020">candidate_YYYY-MM-DD.csv</code> here</div>
+    <div class="drop-sub" style="margin-top:.35rem">Run <code>python3 crypto/main.py</code> &rarr; drag the file from <code>Results/crypto_candidates/</code></div>
+  </div>
+  <div id="signal-display" style="display:none">
+    <div class="sig-grid" id="sig-cards"></div>
+    <div style="font-size:11px;color:#555550;margin-top:.6rem">Click &ldquo;fill log form&rdquo; on a signal to auto-populate the Log Trade tab, then hit + add trade.</div>
+  </div>
+</div>
+
+<div id="phase-banner" class="phase-banner phase-warn">
+  <span id="phase-icon" style="font-size:14px">&#9888;</span>
+  <span id="phase-text">Phase 1 — paper trading active</span>
+</div>
+
+<div class="grid-4">
+  <div class="metric"><div class="lbl">Total P&amp;L</div><div class="val" id="m-pnl">$0.00</div><div class="sub" id="m-r">0.000R</div></div>
+  <div class="metric"><div class="lbl">Win rate</div><div class="val" id="m-wr">&#8212;</div><div class="sub" id="m-wl">0W / 0L</div></div>
+  <div class="metric"><div class="lbl">Profit factor</div><div class="val" id="m-pf">&#8212;</div><div class="sub" id="m-pf-sub">gross W / gross L</div></div>
+  <div class="metric"><div class="lbl">Max drawdown</div><div class="val" id="m-dd">&#8212;</div><div class="sub" id="m-dd-sub">peak to trough</div></div>
+</div>
+<div class="grid-3">
+  <div class="metric"><div class="lbl">Expectancy R</div><div class="val" id="m-exp">&#8212;</div><div class="sub" id="m-exp-sub">after 32% tax: &#8212;</div></div>
+  <div class="metric"><div class="lbl">Weeks logged</div><div class="val" id="m-weeks">0 / 8</div><div class="sub">minimum for phase 1</div></div>
+  <div class="metric"><div class="lbl">Account equity</div><div class="val" id="m-equity">$500.00</div><div class="sub" id="m-eq-sub">starting $500</div>
+    <div class="equity-bar-wrap"><div class="equity-bar" id="equity-bar" style="width:50%;background:#1fba85"></div></div>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <button class="tab" onclick="showTab('how')">How to use</button>
+  <button class="tab active" onclick="showTab('log')">Log trade</button>
+  <button class="tab" onclick="showTab('history')">History</button>
+  <button class="tab" onclick="showTab('weeks')">Weekly</button>
+  <button class="tab" onclick="showTab('gates')">Phase gates</button>
+  <button class="tab" onclick="showTab('backup')">Backup</button>
+</div>
+
+<div id="tab-how" style="display:none">
+  <div class="warn-box">This tracker saves to your browser's localStorage. Export a JSON backup every Friday and Sunday — save it to your Crypto_Model iCloud folder.</div>
+  <div class="info-box">Open this file in Chrome or Safari and bookmark it. Always use the same browser on this machine so localStorage persists.</div>
+  <div class="card">
+    <div class="section-label">Friday night — every week</div>
+    <div class="how-step"><div class="how-num">1</div><div class="how-body"><div class="how-title">Run main.py after market close</div><div class="how-sub">python3 crypto/main.py — outputs BTC and ETH signals with exact entry, stop, target, units</div></div></div>
+    <div class="how-step"><div class="how-num">2</div><div class="how-body"><div class="how-title">Log signals in this tracker</div><div class="how-sub">Log Trade tab — one row per instrument. Log NO_TRADE rows too so you track filter frequency</div></div></div>
+    <div class="how-step"><div class="how-num">3</div><div class="how-body"><div class="how-title">Enter orders in TradingView paper account</div><div class="how-sub">Place stop-limit buy at entry, stop-loss at stop level, take-profit at target level</div></div></div>
+    <div class="how-step"><div class="how-num">4</div><div class="how-body"><div class="how-title">Export JSON backup</div><div class="how-sub">Backup tab &#8594; Export JSON &#8594; save to Crypto_Model folder in iCloud</div></div></div>
+  </div>
+  <div class="card">
+    <div class="section-label">Sunday night — every week</div>
+    <div class="how-step"><div class="how-num">1</div><div class="how-body"><div class="how-title">Check TradingView for fills</div><div class="how-sub">Did target or stop trigger? If neither — TIME exit at Sunday close price</div></div></div>
+    <div class="how-step"><div class="how-num">2</div><div class="how-body"><div class="how-title">Close open trades</div><div class="how-sub">Log Trade tab &#8594; Close open trade &#8594; enter exit price and exit type</div></div></div>
+    <div class="how-step"><div class="how-num">3</div><div class="how-body"><div class="how-title">Close the week</div><div class="how-sub">Weekly tab &#8594; Close week &#8594; add a short note. Counts toward 8-week gate</div></div></div>
+    <div class="how-step"><div class="how-num">4</div><div class="how-body"><div class="how-title">Export JSON backup</div><div class="how-sub">Always backup after Sunday close</div></div></div>
+  </div>
+  <div class="card">
+    <div class="section-label">Exit types explained</div>
+    <div class="how-step"><div class="how-num" style="background:#0d2e22;color:#1fba85">T</div><div class="how-body"><div class="how-title">TARGET — hit 2R level at any point Saturday or Sunday</div><div class="how-sub">Exit price = target from main.py. TradingView take-profit triggered automatically</div></div></div>
+    <div class="how-step"><div class="how-num" style="background:#2e0d0d;color:#e55555">S</div><div class="how-body"><div class="how-title">STOP — stopped out</div><div class="how-sub">Exit price = stop from main.py. TradingView stop-loss triggered automatically</div></div></div>
+    <div class="how-step"><div class="how-num" style="background:#2e2000;color:#e5a020">Ti</div><div class="how-body"><div class="how-title">TIME — Sunday close, neither target nor stop hit</div><div class="how-sub">Most common (78% of backtest trades). Exit at BTC/ETH price Sunday ~9pm ET</div></div></div>
+  </div>
+  <div class="card">
+    <div class="section-label">Week 1 — March 13 (log these now, retroactive)</div>
+    <div style="font-size:13px;line-height:2">
+      <div style="border-bottom:0.5px solid rgba(255,255,255,0.08);padding-bottom:8px;margin-bottom:8px">
+        <span class="badge badge-btc">BTC</span> Mar 13 &middot; Entry $71,039 &middot; Stop $66,836 &middot; Target $79,447 &middot; 0.005947 BTC<br>
+        <span style="color:#555550">BTC hit ~$84,000 that weekend. Log as </span><span class="badge badge-target">TARGET</span><span style="color:#555550"> &middot; exit $79,447 &middot; +2R &middot; +$50</span>
+      </div>
+      <div>
+        <span class="badge badge-eth">ETH</span> Mar 13 &middot; Entry $2,095 &middot; Stop $1,945 &middot; Target $2,393 &middot; 0.167367 ETH<br>
+        <span style="color:#555550">ETH opened near stop Saturday. Log as </span><span class="badge badge-stop">STOP</span><span style="color:#555550"> &middot; exit $1,945 &middot; -1R &middot; -$25</span>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="section-label">Week 2 — March 19 (this weekend, log now)</div>
+    <div style="font-size:13px;line-height:2">
+      <div style="border-bottom:0.5px solid rgba(255,255,255,0.08);padding-bottom:8px;margin-bottom:8px">
+        <span class="badge badge-btc">BTC</span> Mar 19 &middot; <span class="badge badge-no_trade">NO_TRADE</span><br>
+        <span style="color:#555550">Closed $69,912 &middot; MA20 $69,934 &middot; $21 below the line &middot; system says sit out</span>
+      </div>
+      <div>
+        <span class="badge badge-eth">ETH</span> Mar 19 &middot; Entry $2,140 &middot; Stop $2,003 &middot; Target $2,413 &middot; 0.182693 ETH<br>
+        <span style="color:#555550">Log as LONG open. Close Sunday night at whatever ETH is trading</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="tab-log">
+  <div class="card">
+    <div class="section-label">Add paper trade</div>
+    <div class="form-grid">
+      <div><label>Friday date</label><input type="date" id="in-date"></div>
+      <div><label>Instrument</label><select id="in-inst"><option value="BTC">BTC</option><option value="ETH">ETH</option></select></div>
+      <div><label>Signal</label><select id="in-sig" onchange="toggleTradeFields()"><option value="LONG">LONG</option><option value="NO_TRADE">NO_TRADE</option></select></div>
+      <div><label>Above MA20?</label><select id="in-ma"><option value="yes">Yes</option><option value="no">No</option></select></div>
+    </div>
+    <div id="trade-fields">
+      <div class="form-grid">
+        <div><label>Entry $</label><input type="number" id="in-entry" step="0.01"></div>
+        <div><label>Stop $</label><input type="number" id="in-stop" step="0.01"></div>
+        <div><label>Target $</label><input type="number" id="in-target" step="0.01"></div>
+        <div><label>Units</label><input type="number" id="in-units" step="0.000001"></div>
+      </div>
+      <div class="form-grid">
+        <div><label>Exit price $ (blank if open)</label><input type="number" id="in-exit" step="0.01"></div>
+        <div><label>Exit type</label><select id="in-exit-type"><option value="">&#8212; open &#8212;</option><option value="TARGET">TARGET</option><option value="STOP">STOP</option><option value="TIME">TIME</option></select></div>
+        <div><label>Exit date</label><input type="date" id="in-exit-date"></div>
+        <div></div>
+      </div>
+    </div>
+    <div style="margin-bottom:8px"><label>Weekend notes</label><textarea id="in-notes" placeholder="e.g. Target hit Saturday 11am &#183; BTC spiked on macro news &#183; TIME exit Sunday 9pm at $71,200"></textarea></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="addTrade()">+ add trade</button>
+      <button onclick="closeOpenPrompt()">close open trade</button>
+    </div>
+    <div class="err" id="add-err"></div>
+  </div>
+  <div class="card">
+    <div class="section-label">Open trades this weekend</div>
+    <div id="open-list"><div style="font-size:13px;color:#555550">No open trades.</div></div>
+  </div>
+</div>
+
+<div id="tab-history" style="display:none">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <div class="section-label" style="margin-bottom:0">All trades</div>
+      <button onclick="exportCSV()" style="font-size:12px;padding:4px 12px">export CSV</button>
+    </div>
+    <div id="history-list"><div style="font-size:13px;color:#555550">No trades yet.</div></div>
+  </div>
+</div>
+
+<div id="tab-weeks" style="display:none">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+      <div class="section-label" style="margin-bottom:0">Weekly summary &#8212; current week: <span id="cur-week-label">1</span></div>
+      <button onclick="advanceWeek()" style="font-size:12px;padding:4px 12px">close week &#8594;</button>
+    </div>
+    <div id="weeks-list"><div style="font-size:13px;color:#555550">No weeks closed yet. Click "close week" each Sunday after logging exits.</div></div>
+  </div>
+</div>
+
+<div id="tab-gates" style="display:none">
+  <div class="card">
+    <div class="section-label">Phase 1 validation gates</div>
+    <div id="gates-list"></div>
+    <div style="margin-top:1rem;font-size:12px;color:#555550;line-height:1.6">All three gates must show green before deploying real capital on Coinbase Advanced. Paper trading started week of March 21, 2026. Target completion: 8 weekends (~May 2026).</div>
+  </div>
+  <div class="card">
+    <div class="section-label">Locked parameters for paper trading</div>
+    <div style="font-size:13px;line-height:2.2">
+      <div style="display:flex;justify-content:space-between;border-bottom:0.5px solid rgba(255,255,255,0.06)"><span style="color:#555550">Stop distance</span><span style="font-weight:500">1.25x ATR14</span></div>
+      <div style="display:flex;justify-content:space-between;border-bottom:0.5px solid rgba(255,255,255,0.06)"><span style="color:#555550">Target</span><span style="font-weight:500">2.0R</span></div>
+      <div style="display:flex;justify-content:space-between;border-bottom:0.5px solid rgba(255,255,255,0.06)"><span style="color:#555550">Risk per trade</span><span style="font-weight:500">5% of account ($25)</span></div>
+      <div style="display:flex;justify-content:space-between;border-bottom:0.5px solid rgba(255,255,255,0.06)"><span style="color:#555550">Max weekend exposure</span><span style="font-weight:500">10% ($50 if both signal)</span></div>
+      <div style="display:flex;justify-content:space-between;border-bottom:0.5px solid rgba(255,255,255,0.06)"><span style="color:#555550">Instruments</span><span style="font-weight:500">BTC + ETH only</span></div>
+      <div style="display:flex;justify-content:space-between;border-bottom:0.5px solid rgba(255,255,255,0.06)"><span style="color:#555550">Tax rate</span><span style="font-weight:500">32% short-term</span></div>
+      <div style="display:flex;justify-content:space-between"><span style="color:#555550">No-change rule</span><span style="font-weight:500">No parameter changes before 8 weeks</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="tab-backup" style="display:none">
+  <div class="warn-box">Export a JSON backup every Friday and Sunday. Save to your Crypto_Model folder in iCloud. This is the only way to restore if you clear browser data or switch browsers.</div>
+  <div class="card">
+    <div class="section-label">Export</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button onclick="exportJSON()">export JSON backup</button>
+      <button onclick="exportCSV()">export trades CSV</button>
+    </div>
+    <div style="font-size:12px;color:#555550">JSON restores everything. CSV feeds into the Firebase dashboard when Phase 1 ends.</div>
+  </div>
+  <div class="card">
+    <div class="section-label">Restore</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      <button onclick="document.getElementById('json-restore').click()">restore from JSON backup</button>
+      <input type="file" id="json-restore" accept=".json" style="display:none;width:auto" onchange="restoreJSON(this)">
+    </div>
+    <div style="font-size:12px;color:#555550">Open this file in the same browser and restore from your most recent JSON export.</div>
+  </div>
+  <div class="card">
+    <div class="section-label">Import from TradingView</div>
+    <div class="import-area" onclick="document.getElementById('csv-file').click()">
+      click to select TradingView paper trade CSV export
+      <input type="file" id="csv-file" accept=".csv" style="display:none;width:auto" onchange="importCSV(this)">
+    </div>
+    <div style="font-size:12px;color:#555550;margin-bottom:.5rem">TradingView: Paper Trading &#8594; Trade History &#8594; Export. After import manually fix stop/target/R values in History tab.</div>
+    <div id="import-result" style="font-size:13px"></div>
+  </div>
+  <div class="card">
+    <div class="section-label" style="color:#e55555">Danger zone</div>
+    <button onclick="clearAll()" style="border-color:#e55555;color:#e55555;background:transparent">clear all data</button>
+    <div style="font-size:12px;color:#555550;margin-top:6px">Export a backup first. Cannot be undone.</div>
+  </div>
+</div>
+
+<script>
+const ACCOUNT_START=500,TAX_RATE=0.32;
+let trades=[],weeks=[],currentWeek=1;
+
+function load(){try{const d=JSON.parse(localStorage.getItem('crypto_paper_v2')||'{}');trades=d.trades||[];weeks=d.weeks||[];currentWeek=d.currentWeek||1;}catch(e){}}
+function save(){localStorage.setItem('crypto_paper_v2',JSON.stringify({trades,weeks,currentWeek}));document.getElementById('last-saved').textContent='saved '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+function fmtP(n){return(n>=0?'+$':'-$')+Math.abs(n).toFixed(2);}
+function fmtR(n){return(n>=0?'+':'')+n.toFixed(3)+'R';}
+
+function showTab(t){
+  ['how','log','history','weeks','gates','backup'].forEach(id=>{document.getElementById('tab-'+id).style.display=id===t?'block':'none';});
+  document.querySelectorAll('.tab').forEach(b=>{b.classList.toggle('active',b.getAttribute('onclick').includes("'"+t+"'"));});
+  if(t==='history')renderHistory();
+  if(t==='weeks')renderWeeks();
+  if(t==='gates')renderGates();
+  if(t==='log')renderOpen();
+}
+
+function toggleTradeFields(){
+  const show=document.getElementById('in-sig').value==='LONG';
+  document.getElementById('trade-fields').style.opacity=show?'1':'0.4';
+  document.getElementById('trade-fields').style.pointerEvents=show?'auto':'none';
+}
+
+function calcMetrics(){
+  const closed=trades.filter(t=>t.exit_price&&t.exit_type&&t.direction==='LONG');
+  const wins=closed.filter(t=>t.profit_loss>0);
+  const losses=closed.filter(t=>t.profit_loss<=0);
+  const totalPnl=closed.reduce((s,t)=>s+t.profit_loss,0);
+  const totalR=closed.reduce((s,t)=>s+(t.R_multiple||0),0);
+  const grossW=wins.reduce((s,t)=>s+t.profit_loss,0);
+  const grossL=Math.abs(losses.reduce((s,t)=>s+t.profit_loss,0));
+  const pf=grossL>0?(grossW/grossL):null;
+  const wr=closed.length>0?wins.length/closed.length:null;
+  const avgR=closed.length>0?totalR/closed.length:null;
+  const avgWinR=wins.length>0?wins.reduce((s,t)=>s+(t.R_multiple||0),0)/wins.length:0;
+  const avgLossR=losses.length>0?losses.reduce((s,t)=>s+(t.R_multiple||0),0)/losses.length:0;
+  const afterTaxExp=wr!=null?(wr*avgWinR*(1-TAX_RATE))+((1-wr)*avgLossR):null;
+  let eq=ACCOUNT_START;const eqCurve=[eq];
+  [...closed].reverse().forEach(t=>{eq+=t.profit_loss;eqCurve.push(eq);});
+  let peak=ACCOUNT_START,maxDD=0;
+  eqCurve.forEach(v=>{if(v>peak)peak=v;const dd=(peak-v)/peak*100;if(dd>maxDD)maxDD=dd;});
+  return{closed,wins,losses,totalPnl,totalR,grossW,grossL,pf,wr,avgR,avgWinR,avgLossR,afterTaxExp,maxDD,equity:eq,weekCount:weeks.length};
+}
+
+function checkGates(m){
+  return{
+    weeks:{pass:m.weekCount>=8,label:'Weeks logged: '+m.weekCount+' / 8'},
+    winRate:{pass:m.wr!=null&&m.wr>0.5,label:'Win rate: '+(m.wr!=null?Math.round(m.wr*100)+'%':'--')+' (need > 50%)'},
+    expectancy:{pass:m.afterTaxExp!=null&&m.afterTaxExp>0,label:'After-tax expectancy: '+(m.afterTaxExp!=null?m.afterTaxExp.toFixed(3)+'R':'--')+' (need > 0)'},
+  };
+}
+
+function render(){
+  const m=calcMetrics();
+  const gates=checkGates(m);
+  const allPass=gates.weeks.pass&&gates.winRate.pass&&gates.expectancy.pass;
+  const WIN='#1fba85',LOSS='#e55555',NEUT='#e5a020',MUTED='#555550',PRI='#e8e6e0';
+  const pnlEl=document.getElementById('m-pnl');pnlEl.textContent=fmtP(m.totalPnl);pnlEl.style.color=m.totalPnl>=0?WIN:LOSS;
+  document.getElementById('m-r').textContent=fmtR(m.totalR)+' total';
+  const wrEl=document.getElementById('m-wr');wrEl.textContent=m.wr!=null?Math.round(m.wr*100)+'%':'--';wrEl.style.color=m.wr!=null?(m.wr>0.5?WIN:LOSS):PRI;
+  document.getElementById('m-wl').textContent=m.wins.length+'W / '+m.losses.length+'L';
+  const pfEl=document.getElementById('m-pf');pfEl.textContent=m.pf!=null?m.pf.toFixed(2):'--';pfEl.style.color=m.pf!=null?(m.pf>=1.5?WIN:m.pf>=1?NEUT:LOSS):PRI;
+  document.getElementById('m-pf-sub').textContent=m.closed.length?'$'+m.grossW.toFixed(0)+'W / $'+m.grossL.toFixed(0)+'L':'gross W / gross L';
+  const ddEl=document.getElementById('m-dd');ddEl.textContent=m.closed.length?m.maxDD.toFixed(1)+'%':'--';ddEl.style.color=m.maxDD>30?LOSS:m.maxDD>15?NEUT:WIN;
+  document.getElementById('m-dd-sub').textContent=m.closed.length?'peak to trough':'no closed trades';
+  const expEl=document.getElementById('m-exp');expEl.textContent=m.avgR!=null?m.avgR.toFixed(3)+'R':'--';expEl.style.color=m.avgR!=null?(m.avgR>0?WIN:LOSS):PRI;
+  document.getElementById('m-exp-sub').textContent='after 32% tax: '+(m.afterTaxExp!=null?m.afterTaxExp.toFixed(3)+'R':'--');
+  const wkEl=document.getElementById('m-weeks');wkEl.textContent=m.weekCount+' / 8';wkEl.style.color=m.weekCount>=8?WIN:PRI;
+  const eqEl=document.getElementById('m-equity');eqEl.textContent='$'+m.equity.toFixed(2);eqEl.style.color=m.equity>=ACCOUNT_START?WIN:LOSS;
+  document.getElementById('m-eq-sub').textContent=(m.equity>=ACCOUNT_START?'+':'')+fmtP(m.equity-ACCOUNT_START)+' from start';
+  const bar=document.getElementById('equity-bar');bar.style.width=Math.min(100,Math.max(2,(m.equity/ACCOUNT_START)*50))+'%';bar.style.background=m.equity>=ACCOUNT_START?WIN:LOSS;
+  const banner=document.getElementById('phase-banner');banner.className='phase-banner '+(allPass?'phase-pass':'phase-warn');
+  const pc=[gates.weeks.pass,gates.winRate.pass,gates.expectancy.pass].filter(Boolean).length;
+  document.getElementById('phase-text').innerHTML=allPass?'<strong style="color:#1fba85">All gates passed -- ready for real capital on Coinbase.</strong>':'Phase 1 -- paper trading -- '+pc+'/3 gates -- weeks '+(gates.weeks.pass?'v':'x')+' -- win rate '+(gates.winRate.pass?'v':'x')+' -- expectancy '+(gates.expectancy.pass?'v':'x');
+  document.getElementById('cur-week-label').textContent=currentWeek;
+  renderOpen();
+}
+
+function renderOpen(){
+  const el=document.getElementById('open-list');
+  const open=trades.filter(t=>t.direction==='LONG'&&(!t.exit_price||!t.exit_type));
+  if(!open.length){el.innerHTML='<div style="font-size:13px;color:#555550">No open trades this weekend.</div>';return;}
+  el.innerHTML=open.map(t=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:0.5px solid rgba(255,255,255,0.06)"><div style="font-size:13px"><span class="badge badge-'+t.instrument.toLowerCase()+'">'+t.instrument+'</span> <strong>'+t.date+'</strong> &middot; Entry $'+Number(t.entry_price).toLocaleString(undefined,{maximumFractionDigits:2})+' &middot; Stop $'+Number(t.stop_price).toLocaleString(undefined,{maximumFractionDigits:2})+' &middot; Target $'+Number(t.target_price).toLocaleString(undefined,{maximumFractionDigits:2})+'</div><span class="badge badge-open">open</span></div>').join('');
+}
+
+function addTrade(){
+  const err=document.getElementById('add-err');err.textContent='';
+  const date=document.getElementById('in-date').value,inst=document.getElementById('in-inst').value,sig=document.getElementById('in-sig').value,ma=document.getElementById('in-ma').value,notes=document.getElementById('in-notes').value;
+  if(!date){err.textContent='Set the Friday date.';return;}
+  if(sig==='NO_TRADE'){
+    trades.push({id:Date.now(),date,instrument:inst,direction:'NO_TRADE',above_ma20:ma,entry_price:null,stop_price:null,target_price:null,units:null,exit_price:null,exit_type:'NO_TRADE',exit_date:date,profit_loss:0,R_multiple:0,weekend_notes:notes,week:currentWeek});
+    save();render();clearForm();return;
+  }
+  const entry=parseFloat(document.getElementById('in-entry').value),stop=parseFloat(document.getElementById('in-stop').value),target=parseFloat(document.getElementById('in-target').value),units=parseFloat(document.getElementById('in-units').value);
+  if(isNaN(entry)||isNaN(stop)||isNaN(target)||isNaN(units)){err.textContent='Fill in entry, stop, target, and units.';return;}
+  if(stop>=entry){err.textContent='Stop must be below entry.';return;}
+  if(target<=entry){err.textContent='Target must be above entry.';return;}
+  const exitPrice=parseFloat(document.getElementById('in-exit').value),exitType=document.getElementById('in-exit-type').value,exitDate=document.getElementById('in-exit-date').value;
+  const rps=entry-stop;let pnl=0,R=0;
+  if(!isNaN(exitPrice)&&exitType){pnl=(exitPrice-entry)*units;R=(exitPrice-entry)/rps;}
+  trades.push({id:Date.now(),date,instrument:inst,direction:'LONG',above_ma20:ma,entry_price:entry,stop_price:stop,target_price:target,units,exit_price:(!isNaN(exitPrice)&&exitType)?exitPrice:null,exit_type:exitType||null,exit_date:exitDate||null,profit_loss:pnl,R_multiple:R,weekend_notes:notes,week:currentWeek});
+  save();render();clearForm();
+}
+
+function clearForm(){
+  ['in-date','in-entry','in-stop','in-target','in-units','in-exit','in-exit-date','in-notes'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('in-exit-type').value='';document.getElementById('add-err').textContent='';
+  document.getElementById('in-date').value=new Date().toISOString().slice(0,10);
+}
+
+function closeOpenPrompt(){
+  const open=trades.filter(t=>t.direction==='LONG'&&(!t.exit_price||!t.exit_type));
+  if(!open.length){document.getElementById('add-err').textContent='No open trades to close.';return;}
+  const opts=open.map((t,i)=>i+': '+t.instrument+' ('+t.date+')').join('\n');
+  const idx=open.length===1?0:parseInt(prompt('Which trade to close?\n'+opts));
+  if(isNaN(idx)||!open[idx])return;
+  const t=open[idx];
+  const exitPrice=parseFloat(prompt('Exit price for '+t.instrument+'?\nEntry $'+t.entry_price+' -- Stop $'+t.stop_price+' -- Target $'+t.target_price));
+  if(isNaN(exitPrice))return;
+  const exitType=(prompt('Exit type: TARGET / STOP / TIME')||'').toUpperCase();
+  if(!['TARGET','STOP','TIME'].includes(exitType))return;
+  const tidx=trades.findIndex(x=>x.id===t.id);
+  trades[tidx].exit_price=exitPrice;trades[tidx].exit_type=exitType;trades[tidx].exit_date=new Date().toISOString().slice(0,10);
+  trades[tidx].profit_loss=(exitPrice-t.entry_price)*t.units;trades[tidx].R_multiple=(exitPrice-t.entry_price)/(t.entry_price-t.stop_price);
+  save();render();if(document.getElementById('tab-history').style.display!=='none')renderHistory();
+}
+
+function deleteTrade(id){if(!confirm('Delete this trade? Cannot be undone.'))return;trades=trades.filter(t=>t.id!==id);save();render();renderHistory();}
+
+function renderHistory(){
+  const el=document.getElementById('history-list');
+  if(!trades.length){el.innerHTML='<div style="font-size:13px;color:#555550">No trades yet.</div>';return;}
+  const WIN='#1fba85',LOSS='#e55555';
+  const rows=[...trades].reverse().map(t=>{
+    const isOpen=t.direction==='LONG'&&(!t.exit_price||!t.exit_type);
+    const pc=t.profit_loss>0?WIN:t.profit_loss<0?LOSS:'#555550';
+    const rc=t.R_multiple>0?WIN:t.R_multiple<0?LOSS:'#555550';
+    const eb=isOpen?'<span class="badge badge-open">open</span>':t.exit_type?'<span class="badge badge-'+t.exit_type.toLowerCase()+'">'+t.exit_type+'</span>':'--';
+    const pd=t.direction==='NO_TRADE'?'--':t.profit_loss?fmtP(t.profit_loss):(isOpen?'open':'--');
+    const rd=t.R_multiple&&t.direction!=='NO_TRADE'?(t.R_multiple>=0?'+':'')+t.R_multiple.toFixed(3)+'R':'--';
+    return'<div class="trade-row"><div>'+t.date+'</div><div><span class="badge badge-'+t.instrument.toLowerCase()+'">'+t.instrument+'</span></div><div>'+(t.entry_price?'$'+Number(t.entry_price).toLocaleString(undefined,{maximumFractionDigits:0}):'--')+'</div><div>'+(t.stop_price?'$'+Number(t.stop_price).toLocaleString(undefined,{maximumFractionDigits:0}):'--')+'</div><div>'+(t.target_price?'$'+Number(t.target_price).toLocaleString(undefined,{maximumFractionDigits:0}):'--')+'</div><div>'+(t.exit_price?'$'+Number(t.exit_price).toLocaleString(undefined,{maximumFractionDigits:0}):'--')+'</div><div style="color:'+pc+';font-weight:500">'+pd+'</div><div style="color:'+rc+'">'+rd+'</div><div>'+eb+'</div><div><button onclick="deleteTrade('+t.id+')" style="font-size:11px;padding:1px 5px;border-color:#e55555;color:#e55555;background:transparent">x</button></div></div>';
+  }).join('');
+  el.innerHTML='<div class="trade-hdr"><div>Date</div><div>Inst</div><div>Entry</div><div>Stop</div><div>Target</div><div>Exit</div><div>P&amp;L</div><div>R</div><div>Type</div><div></div></div>'+rows;
+}
+
+function advanceWeek(){
+  const wt=trades.filter(t=>t.week===currentWeek&&t.exit_type&&t.direction==='LONG');
+  const pnl=wt.reduce((s,t)=>s+t.profit_loss,0),totalR=wt.reduce((s,t)=>s+(t.R_multiple||0),0),wins=wt.filter(t=>t.profit_loss>0).length;
+  const note=prompt('Week '+currentWeek+' note (what happened this weekend?):')||'';
+  weeks.push({week:currentWeek,trades:wt.length,wins,losses:wt.length-wins,pnl,totalR,note});
+  currentWeek++;save();render();renderWeeks();
+}
+
+function renderWeeks(){
+  const el=document.getElementById('weeks-list');
+  document.getElementById('cur-week-label').textContent=currentWeek;
+  if(!weeks.length){el.innerHTML='<div style="font-size:13px;color:#555550">No weeks closed yet. Click "close week" each Sunday after logging exits.</div>';return;}
+  const WIN='#1fba85',LOSS='#e55555';
+  const rows=[...weeks].reverse().map(w=>'<div class="week-row"><div style="color:#555550">Wk '+w.week+'</div><div>'+w.wins+'W / '+w.losses+'L</div><div>'+(w.trades?Math.round(w.wins/w.trades*100)+'%':'--')+'</div><div style="color:'+(w.pnl>=0?WIN:LOSS)+';font-weight:500">'+fmtP(w.pnl)+'</div><div style="color:#555550">'+fmtR(w.totalR)+'</div><div style="color:#555550;font-size:11px">'+w.trades+' trade'+(w.trades!==1?'s':'')+'</div><div style="font-size:11px;color:#555550;font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+w.note+'</div></div>').join('');
+  el.innerHTML='<div class="week-hdr"><div>#</div><div>Record</div><div>WR%</div><div>P&amp;L</div><div>R</div><div>Trades</div><div>Note</div></div>'+rows;
+}
+
+function renderGates(){
+  const m=calcMetrics(),g=checkGates(m);
+  document.getElementById('gates-list').innerHTML=Object.entries(g).map(([k,v])=>'<div class="gate"><div class="gate-dot '+(v.pass?'gate-pass':'gate-fail')+'">'+(v.pass?'v':'x')+'</div><div style="font-size:13px">'+v.label+'</div></div>').join('');
+}
+
+function dl(content,type,filename){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([content],{type}));a.download=filename;document.body.appendChild(a);a.click();document.body.removeChild(a);}
+function exportCSV(){if(!trades.length){alert('No trades to export.');return;}const cols=['date','instrument','direction','above_ma20','entry_price','stop_price','target_price','units','exit_price','exit_type','exit_date','profit_loss','R_multiple','weekend_notes','week'];const esc=v=>'"'+String(v??'').replace(/"/g,'""')+'"';dl([cols.join(','),...trades.map(t=>cols.map(c=>esc(t[c])).join(','))].join('\n'),'text/csv','crypto_paper_trades_'+new Date().toISOString().slice(0,10)+'.csv');}
+function exportJSON(){dl(JSON.stringify({trades,weeks,currentWeek},null,2),'application/json','crypto_paper_backup_'+new Date().toISOString().slice(0,10)+'.json');}
+function restoreJSON(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);trades=d.trades||[];weeks=d.weeks||[];currentWeek=d.currentWeek||1;save();render();alert('Restored '+trades.length+' trades.');}catch(err){alert('Invalid JSON.');}};r.readAsText(f);input.value='';}
+function importCSV(input){const f=input.files[0];if(!f)return;const r=new FileReader();r.onload=e=>{const lines=e.target.result.trim().split('\n');if(lines.length<2){document.getElementById('import-result').textContent='Empty CSV.';return;}const headers=lines[0].split(',').map(h=>h.trim().replace(/"/g,'').toLowerCase());let imported=0;lines.slice(1).forEach(line=>{const vals=line.split(',').map(v=>v.trim().replace(/^"|"$/g,''));const row={};headers.forEach((h,i)=>row[h]=vals[i]||'');const sym=(row['symbol']||row['instrument']||'').toUpperCase();const inst=sym.includes('BTC')?'BTC':sym.includes('ETH')?'ETH':null;if(!inst)return;const entry=parseFloat(row['entry']||row['entry_price']||0),exit=parseFloat(row['exit']||row['exit_price']||0),pnl=parseFloat(row['profit']||row['profit_loss']||0);if(!entry||!exit)return;const date=row['date']||new Date().toISOString().slice(0,10);trades.push({id:Date.now()+imported,date,instrument:inst,direction:'LONG',above_ma20:'yes',entry_price:entry,stop_price:entry*0.9375,target_price:entry*1.125,units:Math.abs(parseFloat(row['qty']||row['units']||row['size']||0.01)),exit_price:exit,exit_type:pnl>0?'TARGET':pnl<0?'STOP':'TIME',exit_date:date,profit_loss:pnl,R_multiple:0,weekend_notes:'imported from TradingView',week:currentWeek});imported++;});save();render();document.getElementById('import-result').textContent='Imported '+imported+' trades. Fix stop/target/R in History tab.';};r.readAsText(f);input.value='';}
+function clearAll(){if(!confirm('Clear ALL data? Export a backup first. Cannot be undone.'))return;trades=[];weeks=[];currentWeek=1;save();render();renderHistory();renderWeeks();}
+
+document.getElementById('in-date').value=new Date().toISOString().slice(0,10);
+
+// ── Candidate CSV drag-and-drop ──────────────────────────────────────────
+(function(){
+  const zone=document.getElementById('csv-drop-zone');
+
+  function stopDefault(e){e.preventDefault();e.stopPropagation();}
+  ['dragenter','dragover','dragleave','drop'].forEach(ev=>zone.addEventListener(ev,stopDefault));
+  zone.addEventListener('dragenter',()=>zone.classList.add('drag-over'));
+  zone.addEventListener('dragover', ()=>zone.classList.add('drag-over'));
+  zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
+  zone.addEventListener('drop',e=>{
+    zone.classList.remove('drag-over');
+    const file=e.dataTransfer.files[0];
+    if(!file||!file.name.endsWith('.csv')){alert('Drop a .csv file from Results/crypto_candidates/.');return;}
+    const reader=new FileReader();
+    reader.onload=ev=>parseCandidateCSV(ev.target.result,file.name);
+    reader.readAsText(file);
+  });
+
+  // Also allow click-to-open as fallback
+  zone.style.cursor='pointer';
+  zone.addEventListener('click',()=>{
+    const inp=document.createElement('input');
+    inp.type='file';inp.accept='.csv';
+    inp.onchange=e=>{
+      const file=e.target.files[0];if(!file)return;
+      const reader=new FileReader();
+      reader.onload=ev=>parseCandidateCSV(ev.target.result,file.name);
+      reader.readAsText(file);
+    };
+    inp.click();
+  });
+})();
+
+function parseCandidateCSV(text,filename){
+  const lines=text.trim().split('\n').filter(l=>l.trim());
+  if(lines.length<2){alert('CSV looks empty.');return;}
+  const headers=lines[0].split(',').map(h=>h.trim().toLowerCase());
+  const rows=lines.slice(1).map(line=>{
+    // handle quoted fields
+    const vals=[];let cur='',inQ=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(ch==='"'){inQ=!inQ;}
+      else if(ch===','&&!inQ){vals.push(cur.trim());cur='';}
+      else{cur+=ch;}
+    }
+    vals.push(cur.trim());
+    const obj={};
+    headers.forEach((h,i)=>obj[h]=vals[i]||'');
+    return obj;
+  });
+
+  renderSignalPanel(rows,filename);
+}
+
+function renderSignalPanel(rows,filename){
+  const display=document.getElementById('signal-display');
+  const cards=document.getElementById('sig-cards');
+  const label=document.getElementById('csv-loaded-label');
+  const zone=document.getElementById('csv-drop-zone');
+
+  const dateStr=rows[0]&&rows[0].date?rows[0].date:'';
+  label.textContent=(filename||'')+(dateStr?' — signal date '+dateStr:'');
+  zone.style.display='none';
+  display.style.display='block';
+
+  const WIN='#1fba85',LOSS='#e55555',MUTED='#555550';
+
+  cards.innerHTML=rows.map((r,idx)=>{
+    const inst=(r.instrument||'').replace('-USD','');
+    const isLong=r.direction==='LONG';
+    const entry=parseFloat(r.entry_price),stop=parseFloat(r.stop_price),target=parseFloat(r.target_price);
+    // ATR back-calculated from stop: stop = entry - 1.25*ATR → ATR = (entry-stop)/1.25
+    const atr=isLong&&!isNaN(entry)&&!isNaN(stop)?((entry-stop)/1.25):null;
+    const riskDollars=parseFloat(r.risk_dollars)||null;
+    const units=parseFloat(r.units)||null;
+    const aboveMA=(r.above_ma20||r.btc_above_20ma||'').toLowerCase()==='yes';
+
+    const fmt=v=>v!=null&&!isNaN(v)?Number(v).toLocaleString(undefined,{maximumFractionDigits:2}):'—';
+    const fmtU=v=>v!=null&&!isNaN(v)?Number(v).toFixed(6):'—';
+
+    const sigBadge=isLong
+      ?'<span class="badge badge-long">LONG</span>'
+      :'<span class="badge badge-no_trade">NO_TRADE</span>';
+    const maBadge=aboveMA
+      ?'<span style="color:'+WIN+';font-weight:500">YES</span>'
+      :'<span style="color:'+LOSS+';font-weight:500">NO</span>';
+    const instBadge='<span class="badge badge-'+inst.toLowerCase()+'">'+inst+'</span>';
+
+    const fillBtn=isLong
+      ?'<button class="fill-btn" onclick="fillLogForm('+idx+')">fill log form &rarr; Log Trade</button>'
+      :'<button class="fill-btn" onclick="fillLogForm('+idx+')" style="border-color:rgba(255,255,255,0.1);color:#555550">fill log form (NO_TRADE)</button>';
+
+    const rows_html=(isLong?[
+      ['Entry',  '$'+fmt(entry)],
+      ['Stop',   '<span style="color:'+LOSS+'">$'+fmt(stop)+'</span>'],
+      ['Target', '<span style="color:'+WIN+'">$'+fmt(target)+'</span>'],
+      ['ATR14',  atr!=null?'$'+fmt(atr):'—'],
+      ['Units',  fmtU(units)+' '+inst],
+      ['Risk $', riskDollars!=null?'$'+fmt(riskDollars):'—'],
+    ]:[
+      ['Reason', 'Below MA20 — sit out'],
+    ]).map(([k,v])=>'<div class="sig-row"><span class="sig-lbl">'+k+'</span><span class="sig-val">'+v+'</span></div>').join('');
+
+    return '<div class="sig-card '+(isLong?'sig-long':'sig-no_trade')+'" data-idx="'+idx+'">'
+      +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.6rem">'+instBadge+sigBadge+'</div>'
+      +'<div class="sig-row"><span class="sig-lbl">Signal date</span><span class="sig-val">'+r.date+'</span></div>'
+      +'<div class="sig-row"><span class="sig-lbl">Above MA20</span><span class="sig-val">'+maBadge+'</span></div>'
+      +rows_html
+      +fillBtn
+      +'</div>';
+  }).join('');
+
+  // store rows globally so fillLogForm can read them
+  window._csvSignalRows=rows;
+}
+
+function fillLogForm(idx){
+  const rows=window._csvSignalRows||[];
+  const r=rows[idx];if(!r)return;
+  const inst=(r.instrument||'').replace('-USD','');
+  const isLong=r.direction==='LONG';
+
+  // Switch to log tab
+  showTab('log');
+
+  // Fill fields
+  if(r.date)document.getElementById('in-date').value=r.date;
+  const instSel=document.getElementById('in-inst');
+  for(let i=0;i<instSel.options.length;i++){if(instSel.options[i].value===inst){instSel.selectedIndex=i;break;}}
+  document.getElementById('in-sig').value=isLong?'LONG':'NO_TRADE';
+  document.getElementById('in-ma').value=(r.above_ma20||r.btc_above_20ma||'no').toLowerCase()==='yes'?'yes':'no';
+  toggleTradeFields();
+
+  if(isLong){
+    if(r.entry_price) document.getElementById('in-entry').value=parseFloat(r.entry_price).toFixed(2);
+    if(r.stop_price)  document.getElementById('in-stop').value=parseFloat(r.stop_price).toFixed(2);
+    if(r.target_price)document.getElementById('in-target').value=parseFloat(r.target_price).toFixed(2);
+    if(r.units)       document.getElementById('in-units').value=parseFloat(r.units).toFixed(6);
+  }
+
+  // Clear exit fields — trade is being opened, not closed
+  document.getElementById('in-exit').value='';
+  document.getElementById('in-exit-type').value='';
+  document.getElementById('in-exit-date').value='';
+  document.getElementById('in-notes').value='';
+  document.getElementById('add-err').textContent='';
+
+  // Scroll form into view
+  document.getElementById('tab-log').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+load();render();
+</script>
+</body>
+</html>

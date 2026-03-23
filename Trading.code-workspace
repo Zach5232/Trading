@@ -1,0 +1,10 @@
+{
+  "folders": [
+    { "name": "Stock Model", "path": "stock_model" },
+    { "name": "Crypto Model", "path": "crypto_model" },
+    { "name": "Dashboard", "path": "." }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "python3"
+  }
+}
