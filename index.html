@@ -892,6 +892,14 @@ canvas{width:100%!important}
 </div>
 
 <div class="card">
+  <div class="ctitle">Fidelity execution — at open</div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Pre-market: open one browser tab per trade in Fidelity, stage each as a <strong>Limit Buy</strong> at the CSV entry price (Friday's close). Limit orders fill at your price or better — you never overpay. If a stock opens above your limit, the order won't fill and you skip that name cleanly.</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">At 9:30: submit all limit orders. Check fills within 5–10 minutes. Cancel any unfilled orders — do not chase a name that opened above your limit price.</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">After each fill: immediately place a separate <strong>Sell → Stop Loss</strong> order at the CSV stop price. Set Time in Force to <strong>GTC (Good Till Cancelled)</strong>. Do not move to the next trade until the stop is placed.</span></div>
+  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px" style="color:#e55555">⚠</span><span style="font-size:13px;color:#e55555">A position without a GTC stop loss is a rule violation. The stop order costs no additional capital — it just protects what you already own.</span></div>
+</div>
+
+<div class="card">
   <div class="ctitle">Friday checklist</div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Check each open position — did target or stop trigger this week?</span></div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Log exits for closed positions using the close button on each trade</span></div>
