@@ -675,6 +675,16 @@ canvas{width:100%!important}
   <div id="c-open-list"><div style="font-size:13px;opacity:.5">No open trades.</div></div>
 </div>
 
+<!-- ── F2: Weekly observations ── -->
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Weekly observations</div>
+<div class="card" style="margin-bottom:1rem">
+  <textarea id="c-weekly-note" rows="4" style="width:100%;font-size:13px;padding:7px 8px;border-radius:8px;border:.5px solid;resize:vertical;min-height:80px;margin-bottom:8px" placeholder="Notes on this week's signals, market conditions, anything worth remembering…"></textarea>
+  <div style="display:flex;align-items:center;gap:10px">
+    <button onclick="cSaveWeeklyNote()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;min-height:34px">Save note</button>
+    <span id="c-note-status" style="font-size:11px;opacity:.5"></span>
+  </div>
+</div>
+
 <!-- ── G: Equity curve ── -->
 <div class="card" style="margin-bottom:1rem">
   <div class="card-hdr">
@@ -2808,7 +2818,7 @@ function showMainTab(tab) {
 function applyThemeCrypto() {
   const T = THEME;
   // Apply theme colours to crypto form inputs/selects
-  document.querySelectorAll('.c-form-grid input, .c-form-grid select, #c-in-notes, #c-close-select, #c-close-price, #c-close-type, #c-close-date').forEach(el => {
+  document.querySelectorAll('.c-form-grid input, .c-form-grid select, #c-in-notes, #c-weekly-note, #c-close-select, #c-close-price, #c-close-type, #c-close-date').forEach(el => {
     el.style.background = T.inputBg;
     el.style.borderColor = T.btnBorder;
     el.style.color = T.textPrimary;
@@ -2874,6 +2884,7 @@ async function loadCryptoData() {
         ready < N ? onFirst() : renderCrypto();
       }, () => onFirst())
     );
+    cLoadWeeklyNote();
   });
 }
 
@@ -2927,7 +2938,7 @@ async function seedCryptoData() {
 function renderCrypto() {
   const T = THEME;
   const closed = cryptoTrades.filter(t => t.exit_type);
-  const open   = cryptoTrades.filter(t => !t.exit_type);
+  const open   = cryptoTrades.filter(t => t.direction === 'LONG' && !t.exit_type);
 
   renderCryptoMetrics(closed, open, T);
   renderCryptoSignalCards(T);
@@ -3540,6 +3551,32 @@ async function cDeleteTrade(id) {
   if (!confirm('Delete this trade?')) return;
   try { await dbWrite(userRef.collection('crypto_trades').doc(id).delete()); }
   catch(e) { alert('Delete error: ' + e.message); }
+}
+
+async function cSaveWeeklyNote() {
+  const note = document.getElementById('c-weekly-note').value;
+  const status = document.getElementById('c-note-status');
+  status.textContent = 'saving…';
+  try {
+    await userRef.collection('crypto_config').doc('weekly_note').set({ note, updated_at: firebase.firestore.FieldValue.serverTimestamp() });
+    status.textContent = 'saved ✓';
+    setTimeout(() => status.textContent = '', 2000);
+  } catch(e) {
+    status.textContent = 'error saving';
+    console.error('[CRYPTO] weekly note save error', e);
+  }
+}
+
+async function cLoadWeeklyNote() {
+  try {
+    const snap = await userRef.collection('crypto_config').doc('weekly_note').get();
+    if (snap.exists) {
+      const el = document.getElementById('c-weekly-note');
+      if (el) el.value = snap.data().note || '';
+    }
+  } catch(e) {
+    console.error('[CRYPTO] weekly note load error', e);
+  }
 }
 
 async function cCloseWeek() {
