@@ -675,16 +675,6 @@ canvas{width:100%!important}
   <div id="c-open-list"><div style="font-size:13px;opacity:.5">No open trades.</div></div>
 </div>
 
-<!-- ── F2: Weekly observations ── -->
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Weekly observations</div>
-<div class="card" style="margin-bottom:1rem">
-  <textarea id="c-weekly-note" rows="4" style="width:100%;font-size:13px;padding:7px 8px;border-radius:8px;border:.5px solid;resize:vertical;min-height:80px;margin-bottom:8px" placeholder="Notes on this week's signals, market conditions, anything worth remembering…"></textarea>
-  <div style="display:flex;align-items:center;gap:10px">
-    <button onclick="cSaveWeeklyNote()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;min-height:34px">Save note</button>
-    <span id="c-note-status" style="font-size:11px;opacity:.5"></span>
-  </div>
-</div>
-
 <!-- ── G: Equity curve ── -->
 <div class="card" style="margin-bottom:1rem">
   <div class="card-hdr">
@@ -814,6 +804,26 @@ canvas{width:100%!important}
       </tr></thead>
       <tbody id="c-week-body"><tr><td colspan="7" style="opacity:.5;padding:12px 6px">No weeks closed yet.</td></tr></tbody>
     </table>
+  </div>
+</div>
+
+<!-- ── I2: Weekly observations ── -->
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Weekly observations</div>
+<div class="card" style="margin-bottom:1rem">
+  <!-- read view: shown when a note exists -->
+  <div id="c-note-read" style="display:none">
+    <div id="c-note-display" style="font-size:13px;line-height:1.6;white-space:pre-wrap;margin-bottom:8px"></div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button onclick="cEditWeeklyNote()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;min-height:34px">Edit</button>
+    </div>
+  </div>
+  <!-- edit view: shown when no note exists or editing -->
+  <div id="c-note-edit">
+    <textarea id="c-weekly-note" rows="4" style="width:100%;font-size:13px;padding:7px 8px;border-radius:8px;border:.5px solid;resize:vertical;min-height:80px;margin-bottom:8px" placeholder="Notes on this week's signals, market conditions, anything worth remembering…"></textarea>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button onclick="cSaveWeeklyNote()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;min-height:34px">Save note</button>
+      <span id="c-note-status" style="font-size:11px;opacity:.5"></span>
+    </div>
   </div>
 </div>
 
@@ -3630,14 +3640,33 @@ async function cDeleteTrade(id) {
   catch(e) { alert('Delete error: ' + e.message); }
 }
 
+function cShowNoteReadView(text) {
+  document.getElementById('c-note-display').textContent = text;
+  document.getElementById('c-note-read').style.display = '';
+  document.getElementById('c-note-edit').style.display = 'none';
+}
+
+function cShowNoteEditView(text) {
+  document.getElementById('c-weekly-note').value = text || '';
+  document.getElementById('c-note-read').style.display = 'none';
+  document.getElementById('c-note-edit').style.display = '';
+}
+
+function cEditWeeklyNote() {
+  const current = document.getElementById('c-note-display').textContent;
+  cShowNoteEditView(current);
+}
+
 async function cSaveWeeklyNote() {
   const note = document.getElementById('c-weekly-note').value;
   const status = document.getElementById('c-note-status');
   status.textContent = 'saving…';
   try {
     await userRef.collection('crypto_config').doc('weekly_note').set({ note, updated_at: firebase.firestore.FieldValue.serverTimestamp() });
-    status.textContent = 'saved ✓';
-    setTimeout(() => status.textContent = '', 2000);
+    status.textContent = '';
+    if (note.trim()) {
+      cShowNoteReadView(note);
+    }
   } catch(e) {
     status.textContent = 'error saving';
     console.error('[CRYPTO] weekly note save error', e);
@@ -3648,11 +3677,18 @@ async function cLoadWeeklyNote() {
   try {
     const snap = await userRef.collection('crypto_config').doc('weekly_note').get();
     if (snap.exists) {
-      const el = document.getElementById('c-weekly-note');
-      if (el) el.value = snap.data().note || '';
+      const note = snap.data().note || '';
+      if (note.trim()) {
+        cShowNoteReadView(note);
+      } else {
+        cShowNoteEditView('');
+      }
+    } else {
+      cShowNoteEditView('');
     }
   } catch(e) {
     console.error('[CRYPTO] weekly note load error', e);
+    cShowNoteEditView('');
   }
 }
 
