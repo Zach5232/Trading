@@ -3022,6 +3022,25 @@ async function loadCryptoData() {
     cryptoSignal = sInit.docs.length ? { id: sInit.docs[0].id, ...sInit.docs[0].data() } : null;
     if (cInit.exists) cryptoConfig = { ...cryptoConfig, ...cInit.data() };
     renderCrypto();
+
+    // Explicitly fetch current week doc to load any saved observation.
+    // orderBy('week') queries miss docs that lack the 'week' field (old saves), so we
+    // always do a direct get() by document ID to guarantee the observation loads on refresh.
+    const curWk = cryptoConfig.current_week || 1;
+    try {
+      const obsSnap = await userRef.collection('crypto_weeks').doc('week-' + curWk).get();
+      if (obsSnap.exists) {
+        const obs = obsSnap.data().observation || '';
+        if (obs) {
+          const hit = cryptoWeeks.find(w => w.week === curWk);
+          if (hit) { hit.observation = obs; }
+          else { cryptoWeeks.push({ id: 'week-' + curWk, week: curWk, observation: obs }); }
+          // Force init block to re-evaluate now that obs is populated
+          delete cryNoteEditing[String(curWk)];
+          renderCrypto();
+        }
+      }
+    } catch(e) { console.warn('[CRYPTO] current week obs fetch failed', e); }
   } catch(e) {
     console.warn('[CRYPTO] initial fetch failed, waiting for listeners', e);
   }
@@ -3525,25 +3544,23 @@ async function cWkSave(wkNum) {
   const ta = document.getElementById('cwk-ta-' + wkNum);
   if (!ta) return;
   const obs = ta.value;
+  // NOTE: 'week' field is required so orderBy('week') listeners pick this doc up on reload
+  const payload = { week: wkNum, observation: obs, observation_updated_at: firebase.firestore.FieldValue.serverTimestamp() };
+  console.log('[CRYPTO] cWkSave: writing week', wkNum, '→', JSON.stringify(obs.slice(0, 80)));
   try {
-    await dbWrite(userRef.collection('crypto_weeks').doc('week-' + wkNum).set(
-      { observation: obs, observation_updated_at: firebase.firestore.FieldValue.serverTimestamp() },
-      { merge: true }
-    ));
-    // Update in-memory so re-render shows current text
+    await userRef.collection('crypto_weeks').doc('week-' + wkNum).set(payload, { merge: true });
+    console.log('[CRYPTO] cWkSave: Firestore write succeeded for week', wkNum);
+    // Update in-memory so re-render reflects the new text immediately
     const existing = cryptoWeeks.find(w => w.week === wkNum);
     if (existing) {
       existing.observation = obs;
     } else {
-      cryptoWeeks.push({ week: wkNum, observation: obs });
+      cryptoWeeks.push({ id: 'week-' + wkNum, week: wkNum, observation: obs });
     }
-    // Update curEntry if this is current week
-    const curEntry = cryptoWeeks.find(w => w.week === (cryptoConfig.current_week || 1));
-    if (curEntry && wkNum === curEntry.week) curEntry.observation = obs;
     cryNoteEditing[String(wkNum)] = false; // open + read
     renderCryptoWeeklyTable(THEME);
   } catch(e) {
-    console.error('[CRYPTO] week save error', e);
+    console.error('[CRYPTO] cWkSave: Firestore write FAILED for week', wkNum, e);
   }
 }
 
