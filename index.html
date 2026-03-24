@@ -796,7 +796,11 @@ canvas{width:100%!important}
 <div class="card" style="margin-bottom:1rem">
   <div class="card-hdr">
     <div class="ctitle" style="margin-bottom:0">Weekly summary</div>
-    <button onclick="cCloseWeek()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid;cursor:pointer;background:#0d2e22;color:#1fba85;border-color:#1fba8555">+ close week</button>
+    <div style="display:flex;gap:6px;align-items:center">
+      <button onclick="cExportJSON()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid;cursor:pointer">Export JSON</button>
+      <button onclick="cExportCSV()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid;cursor:pointer">Export CSV</button>
+      <button onclick="cCloseWeek()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid;cursor:pointer;background:#0d2e22;color:#1fba85;border-color:#1fba8555">+ close week</button>
+    </div>
   </div>
   <div id="c-week-body"><div style="opacity:.5;font-size:13px;padding:8px 0">No weeks closed yet.</div></div>
 </div>
@@ -3392,12 +3396,10 @@ function renderCryptoWeeklyTable(T) {
   if (cryptoWeeksPage > maxPage) cryptoWeeksPage = maxPage;
   const pageRows = allRows.slice(cryptoWeeksPage * pageSize, (cryptoWeeksPage + 1) * pageSize);
 
-  // Auto-initialise current week state: open in edit if no obs yet
+  // Auto-initialise current week state on very first render only (undefined = never seen)
   const ck = String(curWk);
-  if (cryNoteEditing[ck] === undefined && !curEntry.observation) {
-    cryNoteEditing[ck] = true; // open + edit
-  } else if (cryNoteEditing[ck] === undefined && curEntry.observation) {
-    cryNoteEditing[ck] = false; // open + read
+  if (cryNoteEditing[ck] === undefined) {
+    cryNoteEditing[ck] = curEntry.observation ? false : true; // read if has obs, else edit
   }
 
   let html = '';
@@ -3415,7 +3417,8 @@ function renderCryptoWeeklyTable(T) {
 
   pageRows.forEach(w => {
     const k = String(w.week);
-    const isPanelOpen = cryNoteEditing[k] !== undefined; // false or true = open
+    // null = explicitly closed; false = open read; true = open edit; undefined = not yet seen
+    const isPanelOpen = cryNoteEditing[k] === false || cryNoteEditing[k] === true;
     const isEditing   = cryNoteEditing[k] === true;
 
     if (w.isCurrent) {
@@ -3501,10 +3504,10 @@ function renderCryptoWeeklyTable(T) {
 
 function cWkToggle(wkNum) {
   const k = String(wkNum);
-  if (cryNoteEditing[k] === undefined) {
-    cryNoteEditing[k] = false; // open in read mode
+  if (cryNoteEditing[k] === false || cryNoteEditing[k] === true) {
+    cryNoteEditing[k] = null; // explicitly closed — stays closed across re-renders
   } else {
-    delete cryNoteEditing[k];  // close
+    cryNoteEditing[k] = false; // open in read mode
   }
   renderCryptoWeeklyTable(THEME);
 }
