@@ -795,32 +795,12 @@ canvas{width:100%!important}
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Weekly summary</div>
 <div class="card" style="margin-bottom:1rem">
   <div class="card-hdr">
-    <div class="ctitle" style="margin-bottom:0">Closed weeks</div>
+    <div class="ctitle" style="margin-bottom:0">Weekly summary</div>
     <button onclick="cCloseWeek()" style="font-size:11px;padding:4px 10px;border-radius:6px;border:.5px solid;cursor:pointer;background:#0d2e22;color:#1fba85;border-color:#1fba8555">+ close week</button>
   </div>
   <div id="c-week-body"><div style="opacity:.5;font-size:13px;padding:8px 0">No weeks closed yet.</div></div>
 </div>
 
-<!-- ── I2: Weekly observations ── -->
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Weekly observations</div>
-<div class="card" style="margin-bottom:1rem">
-  <div class="ctitle" id="c-note-title" style="margin-bottom:.75rem">Week — Observations</div>
-  <!-- read view: shown when a note exists -->
-  <div id="c-note-read" style="display:none">
-    <div id="c-note-display" style="font-size:13px;line-height:1.6;white-space:pre-wrap;margin-bottom:8px"></div>
-    <div style="display:flex;align-items:center;gap:10px">
-      <button onclick="cEditWeeklyNote()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;min-height:34px">Edit</button>
-    </div>
-  </div>
-  <!-- edit view: shown when no note exists or editing -->
-  <div id="c-note-edit">
-    <textarea id="c-weekly-note" rows="4" style="width:100%;font-size:13px;padding:7px 8px;border-radius:8px;border:.5px solid;resize:vertical;min-height:80px;margin-bottom:8px" placeholder="Notes on this week's signals, market conditions, anything worth remembering…"></textarea>
-    <div style="display:flex;align-items:center;gap:10px">
-      <button onclick="cSaveWeeklyNote()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;min-height:34px">Save note</button>
-      <span id="c-note-status" style="font-size:11px;opacity:.5"></span>
-    </div>
-  </div>
-</div>
 
 <!-- ── J: Phase gates ── -->
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Phase gates</div>
@@ -1119,7 +1099,11 @@ db.enablePersistence({synchronizeTabs:false}).catch(e=>{
 
 let userRef=null;          // db.collection('users').doc(uid) — set after auth
 let notesCache={};         // { [weekNum:string]: text } preloaded at startup
-let notesSavedState={};    // { [weekNum:string]: true } tracks which weeks have been explicitly saved
+let notesSavedState={};    // { [weekNum:string]: bool } true=read view, false=edit view
+let stockNotesPage=0;      // current page index for stock weekly notes
+let stockNoteOpen={};      // { [weekNum:string]: bool } which weeks have expanded note panel
+let cryptoWeeksPage=0;     // current page index for crypto weekly summary
+let cryNoteEditing={};     // { [weekNum:string]: bool } which crypto weeks are in edit mode
 let noteSaveTimer=null;
 let _savingCount=0;
 let _booted=false;
@@ -1142,10 +1126,11 @@ let _unsubs=[];
 
 async function loadAllData(){
   // One-time reads: settings (weekNum/regime/intelOpen), migration check, notes
-  const [sSnap,tCheckSnap,nSnap]=await Promise.all([
+  const [sSnap,tCheckSnap,nSnap,swSnap]=await Promise.all([
     userRef.collection('settings').doc('state').get(),
     userRef.collection('data').doc('trades').get(),
     userRef.collection('notes').get(),
+    userRef.collection('stock_weeks').get(),
   ]);
   // First-ever load: migrate from localStorage
   if(!sSnap.exists&&!tCheckSnap.exists){
@@ -1153,6 +1138,8 @@ async function loadAllData(){
   } else {
     if(sSnap.exists){const s=sSnap.data();weekNum=s.weekNum||1;regime=s.regime||'BEAR_TREND';intelOpen=s.intelOpen!==false;}
     nSnap.forEach(doc=>{notesCache[doc.id]=doc.data().text||'';});
+    // stock_weeks notes take precedence over legacy notes collection
+    swSnap.forEach(doc=>{if(doc.data().note)notesCache[doc.id]=doc.data().note;});
   }
   // Real-time listeners — resolve once all four initial snapshots have fired
   return new Promise(resolve=>{
@@ -1253,6 +1240,7 @@ function save(){
 }
 function fmtP(n){return(n>=0?'+$':'-$')+Math.abs(n).toFixed(2)}
 function fmtR(n){return(n>=0?'+':'')+n.toFixed(2)+'R'}
+function escHtml(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function fmtPct(n){return(n>=0?'+':'')+n.toFixed(2)+'%'}
 function pick(arr){return arr[Math.floor(Math.random()*arr.length)]}
 
@@ -1275,30 +1263,53 @@ function saveCurrentNote(text){
   clearTimeout(noteSaveTimer);
   noteSaveTimer=setTimeout(()=>{
     if(!userRef)return;
-    dbWrite(userRef.collection('notes').doc(String(weekNum)).set({text:t}));
+    dbWrite(userRef.collection('stock_weeks').doc(String(weekNum)).set({note:t},{merge:true}));
   },1000);
 }
 
-function commitNote(){
-  const el=document.getElementById('week-note-input');
-  if(!el)return;
-  const text=el.value.trim();
-  if(!text)return;
-  saveCurrentNote(text);
-  notesSavedState[String(weekNum)]=true;
+function stockSaveNote(wk){
+  const ta=document.getElementById('sn-ta-'+wk);
+  if(!ta)return;
+  const text=ta.value.trim();
+  notesCache[String(wk)]=text;
+  notesSavedState[String(wk)]=true;
+  if(userRef){
+    dbWrite(userRef.collection('stock_weeks').doc(String(wk)).set({note:text},{merge:true}));
+  }
   renderNotesCard();
 }
 
-function editNote(wk){
+function stockEditNote(wk){
+  stockNoteOpen[String(wk)]=true;
   notesSavedState[String(wk)]=false;
   renderNotesCard();
-  // If editing current week, scroll textarea into view
-  if(wk===weekNum){
-    setTimeout(()=>{
-      const el=document.getElementById('week-note-input');
-      if(el){el.focus();el.scrollIntoView({behavior:'smooth',block:'center'});}
-    },50);
-  }
+  setTimeout(()=>{
+    const ta=document.getElementById('sn-ta-'+wk);
+    if(ta){ta.focus();ta.scrollIntoView({behavior:'smooth',block:'center'});}
+  },50);
+}
+
+function stockToggleNote(wk){
+  stockNoteOpen[String(wk)]=!stockNoteOpen[String(wk)];
+  renderNotesCard();
+}
+
+function stockPrevPage(){
+  if(stockNotesPage>0){stockNotesPage--;renderNotesCard();}
+}
+
+function stockNextPage(){
+  const total=1+weeks.length;
+  const maxPage=Math.max(0,Math.ceil(total/3)-1);
+  if(stockNotesPage<maxPage){stockNotesPage++;renderNotesCard();}
+}
+
+// legacy compat — keep in case anything calls editNote by name
+function editNote(wk){stockEditNote(wk);}
+
+function commitNote(){
+  const el=document.getElementById('sn-ta-'+weekNum);
+  if(el)stockSaveNote(weekNum);
 }
 
 /* ── taglines ── */
@@ -2048,90 +2059,105 @@ function renderSeason(){
   }).join('');
 }
 
-function toggleNoteWeek(week){
-  const c=document.getElementById('note-content-'+week);
-  const a=document.getElementById('note-toggle-'+week);
-  if(!c||!a)return;
-  if(c.style.display==='none'){c.style.display='block';a.textContent='▲';}
-  else{c.style.display='none';a.textContent='▼';}
-}
-
 function renderNotesCard(){
   const T=THEME;
   const el=document.getElementById('notes-card-body');
   if(!el)return;
 
-  const curNote=notesCache[String(weekNum)]||'';
-  const isSaved=notesSavedState[String(weekNum)]&&curNote.length>0;
+  // Build ordered list: current week first, then closed weeks newest→oldest
+  const allWeeks=[
+    {week:weekNum,regime:regime,pnl:null,isCurrent:true},
+    ...[...weeks].sort((a,b)=>b.week-a.week)
+  ];
+
+  // Initialise open/edit state on first render for each week
+  allWeeks.forEach(w=>{
+    const k=String(w.week);
+    if(stockNoteOpen[k]===undefined){
+      // current week: auto-open so user sees it immediately
+      stockNoteOpen[k]=w.isCurrent;
+    }
+    if(notesSavedState[k]===undefined){
+      const hasNote=!!(notesCache[k]);
+      notesSavedState[k]=hasNote; // true→read view, false→edit view
+    }
+  });
+
+  const pageSize=3;
+  const total=allWeeks.length;
+  const maxPage=Math.max(0,Math.ceil(total/pageSize)-1);
+  if(stockNotesPage>maxPage)stockNotesPage=maxPage;
+  const pageWeeks=allWeeks.slice(stockNotesPage*pageSize,(stockNotesPage+1)*pageSize);
+
   let html='';
 
-  if(isSaved){
-    // Show saved note for current week with Edit button
-    html+='<div style="margin-bottom:1rem">'
-      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
-      +'<label style="font-size:11px;color:'+T.textMuted+'">Week '+weekNum+' — note</label>'
-      +'<button onclick="editNote('+weekNum+')" style="font-size:11px;padding:3px 8px;border-radius:6px;border:.5px solid '+T.btnBorder+';background:'+T.btnBg+';color:'+T.textPrimary+';cursor:pointer">✏️ Edit</button>'
-      +'</div>'
-      +'<div style="padding:8px 10px;border-radius:6px;background:'+T.metricBg+';font-size:12px;color:'+T.textPrimary+';font-style:italic;line-height:1.5;white-space:pre-wrap">'+curNote+'</div>'
-      +'</div>';
-  } else {
-    // Show textarea + Save button
-    html+='<div style="margin-bottom:1rem">'
-      +'<label style="font-size:11px;color:'+T.textMuted+';display:block;margin-bottom:4px">Week '+weekNum+' — note</label>'
-      +'<textarea id="week-note-input" rows="4" maxlength="1000" placeholder="Add your weekly notes here, then click Save…"'
-      +' style="width:100%;font-size:12px;padding:5px 8px;border-radius:7px;border:.5px solid '+T.btnBorder+';background:'+(T.inputBg||T.btnBg)+';color:'+T.textPrimary+';font-style:italic;box-sizing:border-box;resize:vertical;font-family:inherit"'
-      +' oninput="saveCurrentNote(this.value)">'+curNote+'</textarea>'
-      +'<div style="display:flex;justify-content:flex-end;margin-top:6px">'
-      +'<button onclick="commitNote()" style="font-size:12px;padding:5px 14px;border-radius:7px;border:.5px solid '+T.btnBorder+';background:'+T.btnBg+';color:'+T.textPrimary+';cursor:pointer;font-weight:500">Save note</button>'
-      +'</div>'
-      +'</div>';
+  // Pagination nav
+  if(total>pageSize){
+    const canPrev=stockNotesPage>0;
+    const canNext=stockNotesPage<maxPage;
+    html+=`<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:12px">`
+      +`<button onclick="stockPrevPage()" style="padding:3px 10px;border-radius:6px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${canPrev?T.textPrimary:T.textMuted};cursor:${canPrev?'pointer':'default'};opacity:${canPrev?'1':'.4'}">← Newer</button>`
+      +`<span style="color:${T.textMuted}">Page ${stockNotesPage+1} / ${maxPage+1}</span>`
+      +`<button onclick="stockNextPage()" style="padding:3px 10px;border-radius:6px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${canNext?T.textPrimary:T.textMuted};cursor:${canNext?'pointer':'default'};opacity:${canNext?'1':'.4'}">Older →</button>`
+      +`</div>`;
   }
 
-  // Past weeks
-  const pastWeeks=[...weeks].reverse().filter(w=>notesCache[String(w.week)]);
-  if(pastWeeks.length){
-    html+='<div style="font-size:10px;color:'+T.textMuted+';text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Past weeks</div>';
-    pastWeeks.forEach(w=>{
-      const note=notesCache[String(w.week)]||'';
-      const pnlColor=w.pnl>0?T.win:T.loss;
-      const isEditing=notesSavedState[String(w.week)]===false;
-      html+='<div style="border-bottom:.5px solid '+T.btnBorder+';padding:6px 0">'
-        +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'
-        +'<div onclick="toggleNoteWeek('+w.week+')" style="display:flex;gap:12px;align-items:center;cursor:pointer;user-select:none;flex:1">'
-        +'<span style="font-size:12px;font-weight:500;color:'+T.textPrimary+'">Week '+w.week+'</span>'
-        +'<span style="font-size:10px;color:'+T.textMuted+'">'+(w.regime||'—')+'</span>'
-        +'<span style="font-size:12px;color:'+pnlColor+';font-weight:500">'+fmtP(w.pnl)+'</span>'
-        +'</div>'
-        +'<div style="display:flex;gap:6px;align-items:center">'
-        +(isEditing
-          ? '<button onclick="commitPastNote('+w.week+')" style="font-size:10px;padding:3px 8px;border-radius:6px;border:.5px solid '+T.btnBorder+';background:'+T.btnBg+';color:'+T.win+';cursor:pointer">Save</button>'
-          : '<button onclick="editNote('+w.week+')" style="font-size:10px;padding:3px 8px;border-radius:6px;border:.5px solid '+T.btnBorder+';background:'+T.btnBg+';color:'+T.textPrimary+';cursor:pointer">✏️ Edit</button>'
-        )
-        +'<span id="note-toggle-'+w.week+'" style="font-size:10px;color:'+T.textMuted+'">▼</span>'
-        +'</div>'
-        +'</div>'
-        +(isEditing
-          ? '<textarea id="past-note-input-'+w.week+'" rows="4" maxlength="1000"'
-            +' style="width:100%;font-size:12px;padding:5px 8px;border-radius:7px;border:.5px solid '+T.btnBorder+';background:'+(T.inputBg||T.btnBg)+';color:'+T.textPrimary+';font-style:italic;box-sizing:border-box;resize:vertical;font-family:inherit;margin-top:4px"'
-            +' oninput="notesCache[\''+w.week+'\']=this.value">'+note+'</textarea>'
-          : '<div id="note-content-'+w.week+'" style="display:none;margin-top:4px;padding:8px 10px;border-radius:6px;background:'+T.metricBg+';font-size:12px;color:'+T.textPrimary+';font-style:italic;line-height:1.5;white-space:pre-wrap">'+note+'</div>'
-        )
-        +'</div>';
-    });
+  pageWeeks.forEach(w=>{
+    const k=String(w.week);
+    const note=notesCache[k]||'';
+    const isOpen=stockNoteOpen[k];
+    const isEditing=notesSavedState[k]===false;
+
+    // P&L cell
+    let pnlHtml;
+    if(w.isCurrent){
+      pnlHtml=`<span style="font-size:10px;color:${T.textMuted}">open</span>`;
+    } else {
+      const c=w.pnl>0?T.win:T.loss;
+      pnlHtml=`<span style="color:${c};font-weight:500">${fmtP(w.pnl)}</span>`;
+    }
+
+    html+=`<div style="border-bottom:.5px solid ${T.btnBorder}">`;
+    // ── Row ──
+    html+=`<div style="display:flex;align-items:center;gap:8px;padding:7px 0;font-size:12px">`;
+    html+=`<span style="font-weight:500;min-width:60px">Week ${w.week}${w.isCurrent?` <span style="font-size:9px;font-weight:400;color:${T.textMuted}">cur</span>`:''}`;
+    html+=`</span>`;
+    html+=`<span style="flex:1;color:${T.textMuted};font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${w.regime||'—'}</span>`;
+    html+=pnlHtml;
+    html+=`<button onclick="stockEditNote(${w.week})" style="font-size:10px;padding:2px 8px;border-radius:5px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${T.textPrimary};cursor:pointer">Edit</button>`;
+    html+=`<span onclick="stockToggleNote(${w.week})" style="font-size:11px;color:${T.textMuted};cursor:pointer;padding:2px 5px;user-select:none">${isOpen?'▲':'▼'}</span>`;
+    html+=`</div>`;
+
+    // ── Expanded panel ──
+    if(isOpen){
+      if(isEditing){
+        html+=`<div style="padding:0 0 10px">`;
+        html+=`<textarea id="sn-ta-${w.week}" rows="3" maxlength="1000"`
+          +` placeholder="Notes on this week — signals, conditions, lessons…"`
+          +` style="width:100%;font-size:12px;padding:5px 8px;border-radius:7px;border:.5px solid ${T.btnBorder};background:${T.inputBg||T.btnBg};color:${T.textPrimary};font-style:italic;box-sizing:border-box;resize:vertical;font-family:inherit"`
+          +` oninput="notesCache['${k}']=this.value">`
+          +escHtml(note)
+          +`</textarea>`;
+        html+=`<div style="display:flex;justify-content:flex-end;margin-top:5px">`;
+        html+=`<button onclick="stockSaveNote(${w.week})" style="font-size:11px;padding:4px 12px;border-radius:6px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${T.win};cursor:pointer;font-weight:500">Save</button>`;
+        html+=`</div></div>`;
+      } else {
+        if(note){
+          html+=`<div style="padding:2px 0 10px;font-size:12px;color:${T.textPrimary};font-style:italic;line-height:1.6;white-space:pre-wrap">${escHtml(note)}</div>`;
+        } else {
+          html+=`<div style="padding:2px 0 10px;font-size:12px;color:${T.textMuted};font-style:italic">No note yet.</div>`;
+        }
+      }
+    }
+
+    html+=`</div>`;
+  });
+
+  if(!allWeeks.length){
+    html='<div style="font-size:13px;opacity:.5;padding:4px 0">No weeks yet.</div>';
   }
+
   el.innerHTML=html;
-}
-
-function commitPastNote(wk){
-  const el=document.getElementById('past-note-input-'+wk);
-  if(!el)return;
-  const text=el.value.trim();
-  notesCache[String(wk)]=text;
-  notesSavedState[String(wk)]=true;
-  if(userRef){
-    dbWrite(userRef.collection('notes').doc(String(wk)).set({text}));
-  }
-  renderNotesCard();
 }
 
 function exportNotesCSV(){
@@ -2939,7 +2965,7 @@ function showMainTab(tab) {
 function applyThemeCrypto() {
   const T = THEME;
   // Apply theme colours to crypto form inputs/selects
-  document.querySelectorAll('.c-form-grid input, .c-form-grid select, #c-in-notes, #c-weekly-note, #c-close-select, #c-close-price, #c-close-type, #c-close-date').forEach(el => {
+  document.querySelectorAll('.c-form-grid input, .c-form-grid select, #c-in-notes, #c-close-select, #c-close-price, #c-close-type, #c-close-date').forEach(el => {
     el.style.background = T.inputBg;
     el.style.borderColor = T.btnBorder;
     el.style.color = T.textPrimary;
@@ -3052,7 +3078,6 @@ async function loadCryptoData() {
         ready < N ? onFirst() : renderCrypto();
       }, onConfigError)
     );
-    cLoadWeeklyNote();
   });
 }
 
@@ -3340,51 +3365,195 @@ function renderCryptoHistoryTable(closed, T) {
   }).join('');
 }
 
+// cryNoteEditing[k]:
+//   undefined → panel closed
+//   false     → panel open, read view
+//   true      → panel open, edit view
+
 function renderCryptoWeeklyTable(T) {
   const container = document.getElementById('c-week-body');
   if (!container) return;
-  if (!cryptoWeeks.length) {
-    container.innerHTML = '<div style="opacity:.5;font-size:13px;padding:8px 0">No weeks closed yet.</div>';
-    return;
+
+  const curWk = cryptoConfig.current_week || 1;
+
+  // Closed weeks = have a real record (pnl known, not the current week)
+  const closedRows = [...cryptoWeeks]
+    .filter(w => (w.closed_at != null || w.pnl != null) && w.week !== curWk)
+    .sort((a, b) => b.week - a.week);
+
+  // Current week: pick up any saved observation from the listener
+  const curObsEntry = cryptoWeeks.find(w => w.week === curWk) || {};
+  const curEntry = { week: curWk, isCurrent: true, observation: curObsEntry.observation || '' };
+
+  const allRows = [curEntry, ...closedRows];
+  const pageSize = 3;
+  const total = allRows.length;
+  const maxPage = Math.max(0, Math.ceil(total / pageSize) - 1);
+  if (cryptoWeeksPage > maxPage) cryptoWeeksPage = maxPage;
+  const pageRows = allRows.slice(cryptoWeeksPage * pageSize, (cryptoWeeksPage + 1) * pageSize);
+
+  // Auto-initialise current week state: open in edit if no obs yet
+  const ck = String(curWk);
+  if (cryNoteEditing[ck] === undefined && !curEntry.observation) {
+    cryNoteEditing[ck] = true; // open + edit
+  } else if (cryNoteEditing[ck] === undefined && curEntry.observation) {
+    cryNoteEditing[ck] = false; // open + read
   }
-  container.innerHTML = [...cryptoWeeks].sort((a,b)=>a.week-b.week).map(w => {
-    const pnlColor = (w.pnl || 0) >= 0 ? T.win : T.loss;
-    const rColor   = (w.totalR || 0) >= 0 ? T.win : T.loss;
-    const wr = w.trades ? Math.round((w.wins||0) / w.trades * 100) : 0;
-    const wkTrades = cryptoTrades.filter(t => t.week === w.week && t.direction === 'LONG');
-    const tradeNotes = wkTrades.map(t => (t.weekend_notes||'').trim()).filter(Boolean);
-    const obs = (w.observation || '').trim();
-    const closeNote = (w.note || '').trim();
-    const hasDetail = obs || closeNote || tradeNotes.length;
-    return `
-    <div style="border-bottom:.5px solid rgba(255,255,255,0.06)">
-      <div onclick="cToggleWeekDetail(${w.week})" style="display:grid;grid-template-columns:56px 90px 52px 80px 72px 44px 1fr 20px;gap:6px;align-items:center;padding:8px 0;cursor:pointer;font-size:12px;user-select:none">
-        <span style="font-weight:500">Wk ${w.week}</span>
-        <span>${(w.wins||0)}W / ${(w.losses||0)}L</span>
-        <span style="color:${wr >= 50 ? T.win : T.loss}">${wr}%</span>
-        <span style="color:${pnlColor};font-weight:500">${w.pnl != null ? cFmt$(w.pnl) : '—'}</span>
-        <span style="color:${rColor};font-weight:500">${w.totalR != null ? cFmtR(w.totalR) : '—'}</span>
-        <span style="opacity:.6">${w.trades || 0}</span>
-        <span style="opacity:.5;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${closeNote}</span>
-        <span id="c-wk-chevron-${w.week}" style="opacity:.4;font-size:10px;text-align:right">${hasDetail ? '▸' : ''}</span>
-      </div>
-      <div id="c-wk-detail-${w.week}" style="display:none;padding:8px 0 12px;border-top:.5px solid rgba(255,255,255,0.05)">
-        ${closeNote ? `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Close note</div><div style="font-size:12px;line-height:1.6;white-space:pre-wrap">${closeNote}</div></div>` : ''}
-        ${obs ? `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Weekly observation</div><div style="font-size:12px;line-height:1.6;white-space:pre-wrap">${obs}</div></div>` : ''}
-        ${tradeNotes.length ? `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Trade notes</div>${tradeNotes.map(n=>`<div style="font-size:12px;line-height:1.6;opacity:.8;margin-bottom:3px">• ${n}</div>`).join('')}</div>` : ''}
-        ${!hasDetail ? `<div style="font-size:12px;opacity:.4">No notes for this week.</div>` : ''}
-      </div>
-    </div>`;
-  }).join('');
+
+  let html = '';
+
+  // Pagination
+  if (total > pageSize) {
+    const canPrev = cryptoWeeksPage > 0;
+    const canNext = cryptoWeeksPage < maxPage;
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:12px">`
+      + `<button onclick="cCryptoPrevPage()" style="padding:3px 10px;border-radius:6px;border:.5px solid rgba(255,255,255,.12);background:#1a1a1a;color:${canPrev?T.textPrimary:T.textMuted};cursor:${canPrev?'pointer':'default'};opacity:${canPrev?'1':'.4'}">← Newer</button>`
+      + `<span style="color:${T.textMuted}">Page ${cryptoWeeksPage + 1} / ${maxPage + 1}</span>`
+      + `<button onclick="cCryptoNextPage()" style="padding:3px 10px;border-radius:6px;border:.5px solid rgba(255,255,255,.12);background:#1a1a1a;color:${canNext?T.textPrimary:T.textMuted};cursor:${canNext?'pointer':'default'};opacity:${canNext?'1':'.4'}">Older →</button>`
+      + `</div>`;
+  }
+
+  pageRows.forEach(w => {
+    const k = String(w.week);
+    const isPanelOpen = cryNoteEditing[k] !== undefined; // false or true = open
+    const isEditing   = cryNoteEditing[k] === true;
+
+    if (w.isCurrent) {
+      const obs = w.observation || '';
+      html += `<div style="border-bottom:.5px solid rgba(255,255,255,0.06)">`;
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px">`;
+      html += `<span style="font-weight:500;min-width:60px">Wk ${w.week} <span style="font-size:9px;font-weight:400;color:${T.textMuted}">cur</span></span>`;
+      html += `<span style="flex:1;color:${T.textMuted};font-size:10px">open</span>`;
+      html += `<button onclick="cWkEdit(${w.week})" style="font-size:10px;padding:2px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,.12);background:#1a1a1a;color:${T.textPrimary};cursor:pointer">Edit</button>`;
+      html += `<span onclick="cWkToggle(${w.week})" style="font-size:11px;color:${T.textMuted};cursor:pointer;padding:2px 5px;user-select:none">${isPanelOpen?'▲':'▼'}</span>`;
+      html += `</div>`;
+      if (isPanelOpen) {
+        if (isEditing) {
+          html += `<div style="padding:0 0 10px">`;
+          html += `<textarea id="cwk-ta-${w.week}" rows="3" maxlength="1000"`
+            + ` placeholder="Observations on this week's signals, market conditions…"`
+            + ` style="width:100%;font-size:12px;padding:5px 8px;border-radius:7px;border:.5px solid rgba(255,255,255,.12);background:#222220;color:${T.textPrimary};font-style:italic;box-sizing:border-box;resize:vertical;font-family:inherit">`
+            + escHtml(obs) + `</textarea>`;
+          html += `<div style="display:flex;justify-content:flex-end;margin-top:5px">`
+            + `<button onclick="cWkSave(${w.week})" style="font-size:11px;padding:4px 12px;border-radius:6px;border:.5px solid rgba(255,255,255,.12);background:#1a1a1a;color:${T.win};cursor:pointer;font-weight:500">Save</button>`
+            + `</div></div>`;
+        } else {
+          html += obs
+            ? `<div style="padding:2px 0 10px;font-size:12px;color:${T.textPrimary};font-style:italic;line-height:1.6;white-space:pre-wrap">${escHtml(obs)}</div>`
+            : `<div style="padding:2px 0 10px;font-size:12px;color:${T.textMuted};font-style:italic">No observation yet.</div>`;
+        }
+      }
+      html += `</div>`;
+
+    } else {
+      const pnlColor = (w.pnl || 0) >= 0 ? T.win : T.loss;
+      const rColor   = (w.totalR || 0) >= 0 ? T.win : T.loss;
+      const wr = w.trades ? Math.round((w.wins||0) / w.trades * 100) : 0;
+      const wkTrades = cryptoTrades.filter(t => t.week === w.week && t.direction === 'LONG');
+      const tradeNotes = wkTrades.map(t => (t.weekend_notes||'').trim()).filter(Boolean);
+      const obs = (w.observation || '').trim();
+      const closeNote = (w.note || '').trim();
+
+      html += `<div style="border-bottom:.5px solid rgba(255,255,255,0.06)">`;
+      html += `<div style="display:grid;grid-template-columns:60px 86px 48px 76px 70px 40px 1fr auto auto;gap:5px;align-items:center;padding:8px 0;font-size:12px">`;
+      html += `<span style="font-weight:500">Wk ${w.week}</span>`;
+      html += `<span>${(w.wins||0)}W / ${(w.losses||0)}L</span>`;
+      html += `<span style="color:${wr >= 50 ? T.win : T.loss}">${wr}%</span>`;
+      html += `<span style="color:${pnlColor};font-weight:500">${w.pnl != null ? cFmt$(w.pnl) : '—'}</span>`;
+      html += `<span style="color:${rColor};font-weight:500">${w.totalR != null ? cFmtR(w.totalR) : '—'}</span>`;
+      html += `<span style="opacity:.6">${w.trades || 0}</span>`;
+      html += `<span style="opacity:.45;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(closeNote)}</span>`;
+      html += `<button onclick="cWkEdit(${w.week})" style="font-size:10px;padding:2px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,.12);background:#1a1a1a;color:${T.textPrimary};cursor:pointer;white-space:nowrap">Edit</button>`;
+      html += `<span onclick="cWkToggle(${w.week})" style="font-size:11px;color:${T.textMuted};cursor:pointer;padding:2px 5px;user-select:none">${isPanelOpen?'▲':'▼'}</span>`;
+      html += `</div>`;
+      if (isPanelOpen) {
+        html += `<div style="padding:8px 0 12px;border-top:.5px solid rgba(255,255,255,0.05)">`;
+        if (closeNote) html += `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Close note</div><div style="font-size:12px;line-height:1.6;white-space:pre-wrap">${escHtml(closeNote)}</div></div>`;
+        if (isEditing) {
+          html += `<div style="margin-bottom:8px">`
+            + `<div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Weekly observation</div>`
+            + `<textarea id="cwk-ta-${w.week}" rows="3" maxlength="1000"`
+            + ` style="width:100%;font-size:12px;padding:5px 8px;border-radius:7px;border:.5px solid rgba(255,255,255,.12);background:#222220;color:${T.textPrimary};font-style:italic;box-sizing:border-box;resize:vertical;font-family:inherit">`
+            + escHtml(obs) + `</textarea>`
+            + `<div style="display:flex;justify-content:flex-end;margin-top:5px"><button onclick="cWkSave(${w.week})" style="font-size:11px;padding:4px 12px;border-radius:6px;border:.5px solid rgba(255,255,255,.12);background:#1a1a1a;color:${T.win};cursor:pointer;font-weight:500">Save</button></div>`
+            + `</div>`;
+        } else if (obs) {
+          html += `<div style="margin-bottom:8px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Weekly observation</div><div style="font-size:12px;line-height:1.6;white-space:pre-wrap">${escHtml(obs)}</div></div>`;
+        }
+        if (tradeNotes.length) html += `<div><div style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;opacity:.4;margin-bottom:3px">Trade notes</div>${tradeNotes.map(n=>`<div style="font-size:12px;line-height:1.6;opacity:.8;margin-bottom:3px">• ${escHtml(n)}</div>`).join('')}</div>`;
+        if (!closeNote && !obs && !tradeNotes.length) html += `<div style="font-size:12px;opacity:.4">No notes for this week.</div>`;
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+  });
+
+  container.innerHTML = html;
+
+  // Auto-focus current week textarea when in edit mode
+  if (cryNoteEditing[String(curWk)] === true) {
+    setTimeout(() => {
+      const ta = document.getElementById('cwk-ta-' + curWk);
+      if (ta) ta.focus();
+    }, 30);
+  }
 }
 
-function cToggleWeekDetail(wkNum) {
-  const detail   = document.getElementById('c-wk-detail-' + wkNum);
-  const chevron  = document.getElementById('c-wk-chevron-' + wkNum);
-  if (!detail) return;
-  const open = detail.style.display === 'none';
-  detail.style.display = open ? '' : 'none';
-  if (chevron) chevron.textContent = open ? '▾' : '▸';
+function cWkToggle(wkNum) {
+  const k = String(wkNum);
+  if (cryNoteEditing[k] === undefined) {
+    cryNoteEditing[k] = false; // open in read mode
+  } else {
+    delete cryNoteEditing[k];  // close
+  }
+  renderCryptoWeeklyTable(THEME);
+}
+
+function cWkEdit(wkNum) {
+  cryNoteEditing[String(wkNum)] = true; // open + edit
+  renderCryptoWeeklyTable(THEME);
+  setTimeout(() => {
+    const ta = document.getElementById('cwk-ta-' + wkNum);
+    if (ta) { ta.focus(); ta.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  }, 50);
+}
+
+async function cWkSave(wkNum) {
+  const ta = document.getElementById('cwk-ta-' + wkNum);
+  if (!ta) return;
+  const obs = ta.value;
+  try {
+    await dbWrite(userRef.collection('crypto_weeks').doc('week-' + wkNum).set(
+      { observation: obs, observation_updated_at: firebase.firestore.FieldValue.serverTimestamp() },
+      { merge: true }
+    ));
+    // Update in-memory so re-render shows current text
+    const existing = cryptoWeeks.find(w => w.week === wkNum);
+    if (existing) {
+      existing.observation = obs;
+    } else {
+      cryptoWeeks.push({ week: wkNum, observation: obs });
+    }
+    // Update curEntry if this is current week
+    const curEntry = cryptoWeeks.find(w => w.week === (cryptoConfig.current_week || 1));
+    if (curEntry && wkNum === curEntry.week) curEntry.observation = obs;
+    cryNoteEditing[String(wkNum)] = false; // open + read
+    renderCryptoWeeklyTable(THEME);
+  } catch(e) {
+    console.error('[CRYPTO] week save error', e);
+  }
+}
+
+function cCryptoPrevPage() {
+  if (cryptoWeeksPage > 0) { cryptoWeeksPage--; renderCryptoWeeklyTable(THEME); }
+}
+
+function cCryptoNextPage() {
+  const curWk = cryptoConfig.current_week || 1;
+  const closedCount = cryptoWeeks.filter(w => (w.closed_at != null || w.pnl != null) && w.week !== curWk).length;
+  const total = 1 + closedCount;
+  const maxPage = Math.max(0, Math.ceil(total / 3) - 1);
+  if (cryptoWeeksPage < maxPage) { cryptoWeeksPage++; renderCryptoWeeklyTable(THEME); }
 }
 
 function renderCryptoGatesSection(closed, T) {
@@ -3745,63 +3914,6 @@ async function cDeleteTrade(id) {
   catch(e) { alert('Delete error: ' + e.message); }
 }
 
-function cShowNoteReadView(text) {
-  document.getElementById('c-note-display').textContent = text;
-  document.getElementById('c-note-read').style.display = '';
-  document.getElementById('c-note-edit').style.display = 'none';
-}
-
-function cShowNoteEditView(text) {
-  document.getElementById('c-weekly-note').value = text || '';
-  document.getElementById('c-note-read').style.display = 'none';
-  document.getElementById('c-note-edit').style.display = '';
-}
-
-function cEditWeeklyNote() {
-  const current = document.getElementById('c-note-display').textContent;
-  cShowNoteEditView(current);
-}
-
-async function cSaveWeeklyNote() {
-  const note = document.getElementById('c-weekly-note').value;
-  const status = document.getElementById('c-note-status');
-  const wkNum = cryptoConfig.current_week || 1;
-  status.textContent = 'saving…';
-  try {
-    await dbWrite(userRef.collection('crypto_weeks').doc('week-' + wkNum).set(
-      { observation: note, observation_updated_at: firebase.firestore.FieldValue.serverTimestamp() },
-      { merge: true }
-    ));
-    status.textContent = '';
-    // Refresh in-memory cryptoWeeks entry so expandable rows stay current
-    const existing = cryptoWeeks.find(w => w.week === wkNum);
-    if (existing) existing.observation = note;
-    if (note.trim()) {
-      cShowNoteReadView(note);
-    }
-  } catch(e) {
-    status.textContent = 'error saving';
-    console.error('[CRYPTO] weekly note save error', e);
-  }
-}
-
-async function cLoadWeeklyNote() {
-  const wkNum = cryptoConfig.current_week || 1;
-  const titleEl = document.getElementById('c-note-title');
-  if (titleEl) titleEl.textContent = 'Week ' + wkNum + ' Observations';
-  try {
-    const snap = await userRef.collection('crypto_weeks').doc('week-' + wkNum).get();
-    const note = (snap.exists && snap.data().observation) || '';
-    if (note.trim()) {
-      cShowNoteReadView(note);
-    } else {
-      cShowNoteEditView('');
-    }
-  } catch(e) {
-    console.error('[CRYPTO] weekly note load error', e);
-    cShowNoteEditView('');
-  }
-}
 
 async function cCloseWeek() {
   const note = prompt('Week note (optional):', '');
@@ -3836,10 +3948,8 @@ async function cCloseWeek() {
 
   try {
     await dbWrite(batch.commit());
-    // Reset observation panel to blank for the new week
-    cShowNoteEditView('');
-    const titleEl = document.getElementById('c-note-title');
-    if (titleEl) titleEl.textContent = 'Week ' + (wkNum + 1) + ' Observations';
+    // Reset current week note state for new week
+    delete cryNoteEditing[String(wkNum + 1)];
   } catch(e) { alert('Error closing week: ' + e.message); }
 }
 
@@ -3976,8 +4086,6 @@ async function cCleanupAndRenumber() {
     cryptoWeeks  = wSnap.docs.map(d => ({ id: d.id, ...d.data() }));
     if (cSnap.exists) cryptoConfig = { ...cryptoConfig, ...cSnap.data() };
     renderCrypto();
-    await cLoadWeeklyNote();
-
     setTimeout(() => statusEl.remove(), 2000);
     statusEl.textContent = '✓ Cleanup complete';
   } catch(e) {
