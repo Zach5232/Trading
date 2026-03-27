@@ -1824,7 +1824,11 @@ function renderTrends(){
     return;
   }
 
-  const totalPnl=slice.reduce((s,w)=>s+w.pnl,0);
+  // Source: closed[] trades filtered by closeWeek, same live data as m-pnl.
+  // Previously used weeks[].pnl — a snapshot frozen at nextWeek() time — which diverges
+  // from closed[] if pnl values ever differ from what was snapshotted (stale weeks[] record).
+  const weekNums=new Set(slice.map(w=>w.week));
+  const totalPnl=closed.filter(t=>weekNums.has(t.closeWeek)).reduce((s,t)=>s+t.pnl,0);
   const totalR=slice.reduce((s,w)=>s+w.totalR,0);
   const wins=slice.filter(w=>w.pnl>0).length;
   const wr=Math.round(wins/slice.length*100);
@@ -2428,7 +2432,8 @@ function updateLiveDisplay(){
   const ri=REGIME_META[regime]||REGIME_META.UNKNOWN;
   const b=document.getElementById('regime-badge');b.textContent=ri.l;b.className='badge '+ri.c;
 
-  // live P&L (mark-to-market open positions)
+  // m-pnl source: closed[].pnl (all closed trades, always fresh) + live unrealized from trades[].
+  // renderTrends() totalPnl now uses the same closed[] source filtered by closeWeek.
   let livePnl=0,liveR=0;
   trades.forEach(t=>{const c=prices[t.ticker]||t.entry;livePnl+=(c-t.entry)*t.shares;liveR+=(c-t.entry)/Math.max(t.entry-t.stop,0.01)});
   const cPnl=closed.reduce((s,t)=>s+t.pnl,0),cR=closed.reduce((s,t)=>s+(t.r||0),0);
@@ -2468,7 +2473,8 @@ function render(){
   const tl=document.getElementById('tagline-bar');
   tl.textContent=getTagline();tl.style.color=T.textMuted;
 
-  // P&L
+  // m-pnl source: closed[].pnl (all closed trades, always fresh) + live unrealized from trades[].
+  // renderTrends() totalPnl now uses the same closed[] source filtered by closeWeek.
   let livePnl=0,liveR=0;
   trades.forEach(t=>{const c=prices[t.ticker]||t.entry;livePnl+=(c-t.entry)*t.shares;liveR+=(c-t.entry)/Math.max(t.entry-t.stop,0.01)});
   const cPnl=closed.reduce((s,t)=>s+t.pnl,0),cR=closed.reduce((s,t)=>s+(t.r||0),0);
