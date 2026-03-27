@@ -410,6 +410,7 @@ canvas{width:100%!important}
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
       <span id="slate-regime-tag" style="display:none;font-size:11px;padding:2px 9px;border-radius:8px;font-weight:500"></span>
       <button id="slate-archive-btn" onclick="archiveCurrentSlate()" style="display:none;font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Save this week's candidates and start fresh for next week">📁 Archive week</button>
+      <button onclick="nextWeek()" style="font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Advance to next week and reset the live view">Advance week →</button>
       <label style="cursor:pointer">
         <input type="file" id="slate-file-input" accept=".csv" style="display:none" onchange="loadSlateCSV(this)">
         <span class="rbtn" style="display:inline-block">📂 Load Monday slate</span>
@@ -452,7 +453,6 @@ canvas{width:100%!important}
       </select>
     </div>
     <button onclick="addTrade()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;height:34px">+ add</button>
-    <button onclick="nextWeek()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;height:34px">next week →</button>
   </div>
   <div style="margin-top:6px"><span id="add-err" style="font-size:12px"></span></div>
 </div>
@@ -904,6 +904,7 @@ canvas{width:100%!important}
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Check each open position — did target or stop trigger this week?</span></div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Log exits for closed positions using the close button on each trade</span></div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Archive the week via "Archive week" button before running next week's model</span></div>
+  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Click "Advance week" in the Monday model output section to archive the week and reset the live view</span></div>
 </div>
 
 <div class="card">
@@ -1818,7 +1819,7 @@ function renderTrends(){
   const el=document.getElementById('trend-stats');
 
   if(!slice.length){
-    el.innerHTML=`<div style="font-size:13px;grid-column:1/-1">No weeks logged yet — hit "next week" on Fridays.</div>`;
+    el.innerHTML=`<div style="font-size:13px;grid-column:1/-1">No weeks logged yet — hit "Advance week" on Fridays.</div>`;
     if(trendChart){trendChart.destroy();trendChart=null;}
     return;
   }
@@ -2052,7 +2053,7 @@ function renderSectors(){
 /* ── season ── */
 function renderSeason(){
   const el=document.getElementById('season-list');
-  if(!weeks.length){el.innerHTML=`<div style="font-size:13px">Hit "next week" on Friday to log each week.</div>`;return}
+  if(!weeks.length){el.innerHTML=`<div style="font-size:13px">Hit "Advance week" on Friday to log each week.</div>`;return}
   el.innerHTML=`<div class="season-row" style="font-size:11px;color:${THEME.textMuted}"><div>#</div><div>Record</div><div>P&L</div><div>R</div><div>Grd</div><div>Regime</div><div>Notes</div></div>`+
   [...weeks].reverse().map((w,i,arr)=>{
     const gc=w.grade==='A'?'grade-a':w.grade==='B'?'grade-b':w.grade==='C'?'grade-c':w.grade==='D'?'grade-d':'grade-f';
@@ -2242,7 +2243,8 @@ function closeTrade(i,reason){
     <div style="background:${T.cardBg};border:1px solid ${T.cardBorder};border-radius:14px;padding:28px 32px;min-width:300px;max-width:380px;box-shadow:0 8px 40px rgba(0,0,0,0.5)">
       <div style="font-size:13px;font-weight:600;color:${reasonColor};margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">${reasonLabel}</div>
       <div style="font-size:18px;font-weight:700;color:${T.textPrimary};margin-bottom:4px">${t.ticker}</div>
-      <div style="font-size:12px;color:${T.textMuted};margin-bottom:20px">${t.shares} shares · Entry $${t.entry.toFixed(2)}</div>
+      <div style="font-size:12px;color:${T.textMuted};margin-bottom:12px">${t.shares} shares · Entry $${t.entry.toFixed(2)}</div>
+      <div style="font-size:12px;color:${T.neutral};margin-bottom:16px;padding:8px 10px;border-radius:6px;background:${T.neutral}18;line-height:1.5">⚠ Remember to cancel your stop loss order in Fidelity before selling your shares.</div>
       <label style="font-size:12px;color:${T.textMuted};display:block;margin-bottom:6px">Actual fill price</label>
       <input id="close-price-input" type="number" step="0.01" value="${defaultPrice.toFixed(2)}"
         style="width:100%;padding:10px 12px;font-size:16px;font-weight:600;border-radius:8px;border:1px solid ${T.btnBorder};background:${T.inputBg||T.btnBg};color:${T.textPrimary};box-sizing:border-box;margin-bottom:20px">
