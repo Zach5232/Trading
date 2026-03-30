@@ -540,6 +540,10 @@ canvas{width:100%!important}
 </div>
 <div style="margin-bottom:1rem"></div>
 
+<!-- WIN RATE BY SCORE RANGE -->
+<div class="card" style="margin-bottom:1rem"><div class="ctitle">Win rate by score range</div><div id="score-heat-map"><div style="font-size:13px">No data yet.</div></div></div>
+<div style="text-align:center;margin-bottom:1rem"><button id="backfill-pool-btn" onclick="backfillCandidatePool()" style="font-size:11px;opacity:.5;border:none;background:transparent;cursor:pointer;color:inherit">Backfill past weeks →</button></div>
+
 <!-- R DISTRIBUTION -->
 <div class="card" style="margin-bottom:1rem">
   <div class="card-hdr">
@@ -888,15 +892,19 @@ canvas{width:100%!important}
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Run <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">main.py</code> from terminal (command above)</span></div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Find the CSV in <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Trading/stock_model/Results/candidates/</code></span></div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Go to Stock tab → "Load Monday slate" → upload that CSV</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Review candidates, add trades you're taking via "Log a trade" form</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">At 9:15am: check the pre-market price for each candidate against the <strong>Max Entry</strong> column in the slate</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">5</span><span style="font-size:13px">At 9:30am: submit <strong>market orders</strong> for any candidate trading below its max entry price. Skip any candidate trading above max entry — do not chase it.</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">6</span><span style="font-size:13px">After each fill: immediately place a <strong>GTC stop-loss</strong> order in Fidelity at the CSV stop price. Do not move to the next trade until the stop is placed.</span></div>
+  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px">7</span><span style="font-size:13px">Record actual fill prices in the dashboard via the "Log a trade" form — use your real fill price, not the CSV entry price.</span></div>
 </div>
 
 <div class="card">
   <div class="ctitle">Fidelity execution — at open</div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Pre-market: open one browser tab per trade in Fidelity, stage each as a <strong>Limit Buy</strong> at the CSV entry price (Friday's close). Limit orders fill at your price or better — you never overpay. If a stock opens above your limit, the order won't fill and you skip that name cleanly.</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">At 9:30: submit all limit orders. Check fills within 5–10 minutes. Cancel any unfilled orders — do not chase a name that opened above your limit price.</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">After each fill: immediately place a separate <strong>Sell → Stop Loss</strong> order at the CSV stop price. Set Time in Force to <strong>GTC (Good Till Cancelled)</strong>. Do not move to the next trade until the stop is placed.</span></div>
-  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px" style="color:#e55555">⚠</span><span style="font-size:13px;color:#e55555">A position without a GTC stop loss is a rule violation. The stop order costs no additional capital — it just protects what you already own.</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">At 9:15am: check the pre-market price of each candidate in the slate. Compare against the <strong>Max Entry</strong> column. Any candidate already trading above its max entry is skipped — no exceptions.</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">At 9:30am: submit <strong>market orders</strong> for candidates trading below their max entry. Market orders fill at the open price — your fill will differ from the CSV entry price, which is Friday's close.</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">After each fill: immediately place a <strong>Sell → Stop Loss</strong> order at the CSV stop price. Set Time in Force to <strong>GTC (Good Till Cancelled)</strong>. Do not move to the next trade until the stop is placed.</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Record your actual fill price in the dashboard via the "Log a trade" form. Use the real fill, not the CSV entry price — this keeps your P&amp;L and stop distance accurate.</span></div>
+  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px;color:#e55555">⚠</span><span style="font-size:13px;color:#e55555">A position without a GTC stop loss is a rule violation. The stop order costs no additional capital — it just protects what you already own.</span></div>
 </div>
 
 <div class="card">
@@ -1069,6 +1077,7 @@ function applyTheme(){
 let trades  = [];
 let closed  = [];
 let weeks   = [];
+let candidatePool = [];
 let prices  = {};
 let spyHistory = JSON.parse(localStorage.getItem('swingv3_spy')||'[]');  // stays local
 let weekNum = 1;
@@ -1149,23 +1158,27 @@ async function loadAllData(){
   // Real-time listeners — resolve once all four initial snapshots have fired
   return new Promise(resolve=>{
     let ready=0;
-    const onFirst=()=>{if(++ready===4)resolve();};
+    const onFirst=()=>{if(++ready===5)resolve();};
     _unsubs.push(
       userRef.collection('data').doc('trades').onSnapshot(snap=>{
         trades=snap.exists?(snap.data().items||[]):[];
-        ready<4?onFirst():render();
+        ready<5?onFirst():render();
       }),
       userRef.collection('data').doc('closed').onSnapshot(snap=>{
         closed=snap.exists?(snap.data().items||[]):[];
-        ready<4?onFirst():render();
+        ready<5?onFirst():render();
       }),
       userRef.collection('data').doc('weeks').onSnapshot(snap=>{
         weeks=snap.exists?(snap.data().items||[]):[];
-        ready<4?onFirst():render();
+        ready<5?onFirst():render();
       }),
       userRef.collection('data').doc('slates').onSnapshot(snap=>{
         if(snap.exists){const sd=snap.data();slatesStore={current:sd.current||null,archive:sd.archive||[]};}
-        ready<4?onFirst():(renderSlate(),renderSlateHistoryDropdown());
+        ready<5?onFirst():(renderSlate(),renderSlateHistoryDropdown());
+      }),
+      userRef.collection('data').doc('candidatePool').onSnapshot(snap=>{
+        candidatePool=snap.exists?(snap.data().items||[]):[];
+        ready<5?onFirst():renderScoreHeatMap();
       })
     );
   });
@@ -2021,6 +2034,73 @@ function renderHeatMap(){
   }).join('')+'</div>';
 }
 
+/* ── win rate by score range ── */
+function renderScoreHeatMap(){
+  const el=document.getElementById('score-heat-map');
+  if(!el)return;
+  const buckets=[
+    {label:'0.90+',min:0.90,max:Infinity},
+    {label:'0.80–0.89',min:0.80,max:0.90},
+    {label:'0.70–0.79',min:0.70,max:0.80},
+    {label:'0.60–0.69',min:0.60,max:0.70},
+    {label:'0.50–0.59',min:0.50,max:0.60},
+  ];
+  const pool=candidatePool.filter(x=>x.taken&&x.outcome!=null);
+  el.innerHTML='<div style="display:flex;gap:6px">'+buckets.map(b=>{
+    const group=pool.filter(x=>x.score>=b.min&&x.score<b.max);
+    const tot=group.length,wins=group.filter(x=>x.outcome==='win').length;
+    const wr=tot>0?wins/tot:null;
+    let bg,txt;
+    if(!tot){bg=THEME.progressTrack;txt=THEME.textMuted}
+    else if(wr>=0.5){bg='rgba(29,158,117,0.75)';txt='#085041'}
+    else{bg='rgba(226,75,74,0.75)';txt='#501313'}
+    return`<div class="heat-cell" style="background:${bg};color:${txt}"><div style="font-size:11px;font-weight:500">${b.label}</div><div style="font-size:11px">${tot?(Math.round(wr*100)+'%'):'—'}</div><div style="font-size:10px">${tot}t</div></div>`
+  }).join('')+'</div>';
+}
+
+/* ── backfill candidate pool from archived slates ── */
+async function backfillCandidatePool(){
+  if(!userRef)return;
+  const archive=slatesStore.archive||[];
+  if(!archive.length){console.log('No archived slates to backfill');return;}
+  try{
+    const cpSnap=await userRef.collection('data').doc('candidatePool').get();
+    const existing=cpSnap.exists?(cpSnap.data().items||[]):[...candidatePool];
+    const updated=[...existing];
+    let added=0;
+    archive.forEach(slate=>{
+      const slateWeek=slate.week;
+      const slateDate=slate.date||null;
+      (slate.rows||[]).forEach(row=>{
+        const ticker=row['Ticker']||'';
+        if(!ticker)return;
+        if(updated.some(x=>x.week===slateWeek&&x.ticker===ticker))return;
+        const match=closed.find(x=>x.week===slateWeek&&x.ticker===ticker);
+        const taken=!!match;
+        const outcome=match?(match.pnl>0?'win':match.pnl<0?'loss':'time'):null;
+        const exitR=match?parseFloat((match.r||0).toFixed(3)):null;
+        updated.push({
+          week:slateWeek,date:slateDate,ticker,
+          score:parseFloat((parseFloat(row['Signal Score'])||0).toFixed(2)),
+          sector:row['Sector']||null,
+          entry:parseFloat(row['Entry Price'])||0,
+          stop:parseFloat(row['Stop Price'])||0,
+          target:parseFloat(row['Target Price'])||0,
+          regime:row['Regime']||'UNKNOWN',
+          taken,outcome,exitR
+        });
+        added++;
+      });
+    });
+    await userRef.collection('data').doc('candidatePool').set({items:updated});
+    candidatePool=updated;
+    console.log('Backfill complete: '+added+' records added');
+    const btn=document.getElementById('backfill-pool-btn');
+    if(btn)btn.style.display='none';
+    renderScoreHeatMap();
+  }catch(e){console.error('backfillCandidatePool error:',e);}
+}
+
 /* ── hall of fame ── */
 function renderHOF(){
   const el=document.getElementById('hof-list');
@@ -2209,7 +2289,7 @@ function exportStockJSON(){
 }
 
 /* ── add / close trade ── */
-function addTrade(){
+async function addTrade(){
   const ticker=document.getElementById('in-t').value.trim().toUpperCase();
   const entry=parseFloat(document.getElementById('in-e').value);
   const stop=parseFloat(document.getElementById('in-s').value);
@@ -2225,6 +2305,20 @@ function addTrade(){
   _prefillCompany='';
   save();['in-t','in-e','in-s','in-tg','in-sh'].forEach(id=>document.getElementById(id).value='');
   refreshPrices();
+
+  // Silently mark taken:true in candidatePool for this week + ticker
+  if(userRef){
+    try{
+      const cpSnap = await userRef.collection('data').doc('candidatePool').get();
+      const items = cpSnap.exists ? (cpSnap.data().items||[]) : [...candidatePool];
+      let changed = false;
+      items.forEach(x=>{if(x.week===weekNum&&x.ticker===ticker){x.taken=true;changed=true;}});
+      if(changed){
+        await userRef.collection('data').doc('candidatePool').set({items});
+        candidatePool = items;
+      }
+    }catch(e){console.error('candidatePool taken update error:',e);}
+  }
 }
 
 function closeTrade(i,reason){
@@ -2267,7 +2361,7 @@ function closeTrade(i,reason){
 
   document.getElementById('close-cancel-btn').onclick=()=>overlay.remove();
 
-  document.getElementById('close-confirm-btn').onclick=()=>{
+  document.getElementById('close-confirm-btn').onclick=async()=>{
     const raw=parseFloat(document.getElementById('close-price-input').value);
     if(isNaN(raw)||raw<=0){alert('Enter a valid price.');return;}
     const exitPrice=raw;
@@ -2279,6 +2373,27 @@ function closeTrade(i,reason){
     trades.splice(i,1);
     overlay.remove();
     save();render();
+
+    // Silently mark outcome and exitR in candidatePool
+    if(userRef){
+      try{
+        const cpSnap = await userRef.collection('data').doc('candidatePool').get();
+        const items = cpSnap.exists ? (cpSnap.data().items||[]) : [...candidatePool];
+        let changed = false;
+        const outcome = pnl>0?'win':pnl<0?'loss':(reason==='friday'?'time':'loss');
+        items.forEach(x=>{
+          if(x.week===weekNum&&x.ticker===t.ticker){
+            x.outcome=outcome;
+            x.exitR=parseFloat(r.toFixed(3));
+            changed=true;
+          }
+        });
+        if(changed){
+          await userRef.collection('data').doc('candidatePool').set({items});
+          candidatePool = items;
+        }
+      }catch(e){console.error('candidatePool outcome update error:',e);}
+    }
   };
 
   document.getElementById('close-price-input').addEventListener('keydown',e=>{
@@ -2631,7 +2746,7 @@ function render(){
     }).join('')+`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px;color:${T.textMuted}"><button onclick="prevHistoryPage()" ${currentPage===0?'disabled':''} style="font-size:12px;padding:4px 10px;border-radius:8px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${T.textPrimary};cursor:${currentPage===0?'default':'pointer'};opacity:${currentPage===0?'.45':'1'}">&lt;&lt; Prev</button><div>Page ${currentPage+1} / ${totalPages}</div><button onclick="nextHistoryPage()" ${currentPage>=totalPages-1?'disabled':''} style="font-size:12px;padding:4px 10px;border-radius:8px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${T.textPrimary};cursor:${currentPage>=totalPages-1?'default':'pointer'};opacity:${currentPage>=totalPages-1?'.45':'1'}">Next &gt;&gt;</button></div><div style="margin-top:8px;font-size:12px;color:${T.textMuted}">Showing ${showingStart}–${showingEnd} of ${totalRows} trades</div>`;
   }
 
-  buildEquityChart();buildWeekChart();renderHeatMap();renderHOF();renderSectors();renderSeason();renderNotesCard();renderEdu();renderTrends();buildVarianceChart();buildRDistChart();
+  buildEquityChart();buildWeekChart();renderHeatMap();renderScoreHeatMap();renderHOF();renderSectors();renderSeason();renderNotesCard();renderEdu();renderTrends();buildVarianceChart();buildRDistChart();
 }
 
 /* ── delete trades ── */
@@ -2735,7 +2850,7 @@ function loadSlateCSV(input){
   const file = input.files[0];
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = function(e){
+  reader.onload = async function(e){
     const rows = parseCSVRows(e.target.result);
     if(!rows){ alert('CSV appears empty or has no valid rows.'); input.value=''; return; }
     slatesStore.current = {
@@ -2748,6 +2863,42 @@ function loadSlateCSV(input){
     renderSlate();
     renderSlateHistoryDropdown();
     input.value = ''; // reset so same file can be re-loaded
+
+    // Silently log all candidates to candidatePool (no duplicates on reload)
+    if(userRef){
+      try{
+        const cpSnap = await userRef.collection('data').doc('candidatePool').get();
+        const existing = cpSnap.exists ? (cpSnap.data().items||[]) : [...candidatePool];
+        const dateStr = slatesStore.current ? slatesStore.current.date : new Date().toISOString().slice(0,10);
+        let added = 0;
+        const updated = [...existing];
+        rows.forEach(r=>{
+          const ticker = r['Ticker']||'';
+          if(!ticker) return;
+          const alreadyExists = updated.some(x=>x.week===weekNum&&x.ticker===ticker);
+          if(!alreadyExists){
+            updated.push({
+              week:   weekNum,
+              date:   dateStr,
+              ticker,
+              score:  parseFloat((parseFloat(r['Signal Score'])||0).toFixed(2)),
+              sector: r['Sector']||'Other',
+              entry:  parseFloat(r['Entry Price'])||0,
+              stop:   parseFloat(r['Stop Price'])||0,
+              target: parseFloat(r['Target Price'])||0,
+              regime: r['Regime']||'UNKNOWN',
+              taken:   false,
+              outcome: null,
+              exitR:   null
+            });
+            added++;
+          }
+        });
+        await userRef.collection('data').doc('candidatePool').set({items:updated});
+        candidatePool = updated;
+        console.log('Candidate pool updated: '+added+' records added');
+      }catch(e){console.error('candidatePool write error:',e);}
+    }
   };
   reader.readAsText(file);
 }
