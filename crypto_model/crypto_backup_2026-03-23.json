@@ -1,0 +1,109 @@
+{
+  "exported_at": "2026-03-23T04:42:16.618Z",
+  "config": {
+    "current_week": 3,
+    "account_equity": 456.97,
+    "starting_capital": 500,
+    "phase": 1
+  },
+  "trades": [
+    {
+      "direction": "LONG",
+      "above_ma20": "yes",
+      "date": "2026-03-20",
+      "exit_date": "2026-03-22",
+      "weekend_notes": "",
+      "profit_loss": -18.75,
+      "exit_type": "TIME",
+      "units": 0.1927,
+      "target_price": 2417.43,
+      "instrument": "ETH-USD",
+      "R_multiple": -0.747,
+      "week": 3,
+      "exit_price": 2050.12,
+      "created_at": {
+        "seconds": 1774240135,
+        "nanoseconds": 589000000
+      },
+      "entry_price": 2147.43,
+      "stop_price": 2017.11
+    },
+    {
+      "entry_price": 70507,
+      "stop_price": 67414,
+      "exit_price": 67412,
+      "created_at": {
+        "seconds": 1774240029,
+        "nanoseconds": 581000000
+      },
+      "week": 3,
+      "R_multiple": -1.001,
+      "instrument": "BTC-USD",
+      "target_price": 76912,
+      "units": 0.0078,
+      "exit_type": "TIME",
+      "profit_loss": -24.14,
+      "weekend_notes": "",
+      "exit_date": "2026-03-22",
+      "date": "2026-03-20",
+      "direction": "LONG",
+      "above_ma20": "yes"
+    }
+  ],
+  "weeks": [
+    {
+      "losses": 2,
+      "trades": 2,
+      "closed_at": {
+        "seconds": 1774239628,
+        "nanoseconds": 646000000
+      },
+      "pnl": -40.06,
+      "week": 2,
+      "wins": 0,
+      "totalR": -1.607,
+      "note": "Both TIME exits — BTC and ETH drifted down all week, both above stop at Sunday close"
+    }
+  ],
+  "signal": {
+    "id": "2026-03-23",
+    "date": "2026-03-23",
+    "btc": {
+      "above_ma20": "no",
+      "direction": "NO_TRADE",
+      "funding_rate": -0.0026,
+      "no_trade_reason": "below MA20",
+      "funding_class": "NEUTRAL",
+      "filter1_close": 68090,
+      "fear_greed_value": 8,
+      "filter1_ma20": 70218.80350000001,
+      "filter3_pass": false,
+      "filter3_prev_close": 70497.01,
+      "fear_greed_class": "Extreme Fear",
+      "filter2_prev_atr": 2623.547142857143,
+      "filter3_close": 68090,
+      "filter2_atr": 2479.4542857142847,
+      "filter1_pass": false,
+      "filter2_pass": false
+    },
+    "eth": {
+      "filter1_close": 2052.68,
+      "funding_class": "NEUTRAL",
+      "funding_rate": 0.0024,
+      "no_trade_reason": "below MA20",
+      "above_ma20": "no",
+      "direction": "NO_TRADE",
+      "filter1_ma20": 2097.9584999999997,
+      "fear_greed_value": 8,
+      "filter2_atr": 106.4692857142857,
+      "filter1_pass": false,
+      "filter3_close": 2052.68,
+      "filter2_prev_atr": 108.91785714285717,
+      "fear_greed_class": "Extreme Fear",
+      "filter3_prev_close": 2145.89,
+      "filter3_pass": false,
+      "filter2_pass": false
+    },
+    "generated_at": "2026-03-23T04:01:37.850819+00:00"
+  }
+}

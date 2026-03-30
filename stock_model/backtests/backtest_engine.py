@@ -31,7 +31,7 @@ import yfinance as yf
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATA_DIR     = PROJECT_ROOT / "Data"
 CACHE_DIR    = DATA_DIR / "backtest_cache"
-RESULTS_DIR  = PROJECT_ROOT / "Results" / "backtest"
+RESULTS_DIR  = PROJECT_ROOT / "Results" / "backtest" / "momentum"
 TICKER_CSV   = DATA_DIR / "raw_data" / "sp500_tickers.csv"
 CACHE_FILE   = CACHE_DIR / "ohlcv_5yr.csv"
 

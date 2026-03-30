@@ -25,8 +25,8 @@ import yfinance as yf
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
-PROJECT_ROOT  = Path(__file__).resolve().parents[1]
-RESULTS_DIR   = PROJECT_ROOT / "Results" / "backtest"
+PROJECT_ROOT  = Path(__file__).resolve().parents[0]
+RESULTS_DIR   = PROJECT_ROOT / "Results" / "backtest" / "momentum"
 TRADES_CSV    = RESULTS_DIR / "backtest_trades.csv"
 WEEKLY_CSV    = RESULTS_DIR / "backtest_weekly_summary.csv"
 OHLCV_CACHE   = PROJECT_ROOT / "Data" / "backtest_cache" / "ohlcv_5yr.csv"

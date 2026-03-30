@@ -30,7 +30,7 @@ import yfinance as yf
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CACHE_FILE   = PROJECT_ROOT / "Data" / "backtest_cache" / "ohlcv_5yr.csv"
-RESULTS_DIR  = PROJECT_ROOT / "Results" / "backtest"
+RESULTS_DIR  = PROJECT_ROOT / "Results" / "backtest" / "momentum"
 
 START_DATE = "2021-01-01"
 END_DATE   = "2026-03-12"
