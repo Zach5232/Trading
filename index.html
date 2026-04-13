@@ -2889,7 +2889,8 @@ function saveSlates(){
 }
 
 function archiveCurrentSlate(){
-  if(!slatesStore.current || !slatesStore.current.rows || !slatesStore.current.rows.length) return;
+  if(!slatesStore.current) return;
+  if(!slatesStore.current.sitOut && (!slatesStore.current.rows || !slatesStore.current.rows.length)) return;
   slatesStore.current.week = weekNum;
   slatesStore.archive.push(slatesStore.current);
   slatesStore.current = null;
@@ -2900,14 +2901,24 @@ function archiveCurrentSlate(){
 
 function parseCSVRows(text){
   const lines = text.trim().split('\n');
-  if(lines.length < 2) return null;
+  if(!lines.length || !lines[0].trim()) return null;
   const headers = lines[0].split(',').map(h=>h.trim());
-  return lines.slice(1).map(line=>{
+  if(!headers.length) return null;
+  // Read Regime from first data row before filtering (needed for sit-out detection)
+  let sitOutRegime = 'UNKNOWN';
+  if(lines.length >= 2){
+    const firstVals = lines[1].split(',');
+    const firstObj = {};
+    headers.forEach((h,i)=>{ firstObj[h] = (firstVals[i]||'').trim(); });
+    sitOutRegime = firstObj['Regime'] || 'UNKNOWN';
+  }
+  const rows = lines.slice(1).map(line=>{
     const vals = line.split(',');
     const obj = {};
     headers.forEach((h,i)=>{ obj[h] = (vals[i]||'').trim(); });
     return obj;
   }).filter(r=>r['Ticker']&&r['Signal Score']);
+  return { rows, sitOutRegime };
 }
 
 function loadSlateCSV(input){
@@ -2915,13 +2926,16 @@ function loadSlateCSV(input){
   if(!file) return;
   const reader = new FileReader();
   reader.onload = async function(e){
-    const rows = parseCSVRows(e.target.result);
-    if(!rows){ alert('CSV appears empty or has no valid rows.'); input.value=''; return; }
+    const parsed = parseCSVRows(e.target.result);
+    if(parsed === null){ alert('CSV appears empty or unreadable.'); input.value=''; return; }
+    const { rows, sitOutRegime } = parsed;
     slatesStore.current = {
       filename: file.name,
       date: file.name.match(/\d{4}-\d{2}-\d{2}/)?.[0]||'',
       week: weekNum,
-      rows
+      rows,
+      sitOut: rows.length === 0,
+      sitOutRegime
     };
     saveSlates();
     renderSlate();
@@ -2975,12 +2989,43 @@ function renderSlate(){
   if(!outputEl || !fileLabel || !regimeTag) return;
   const slateData = getCurrentSlate();
 
-  if(!slateData || !slateData.rows || !slateData.rows.length){
+  if(!slateData || !slateData.rows || (!slateData.rows.length && !slateData.sitOut)){
     outputEl.innerHTML = '<div style="font-size:13px;font-style:italic;padding:.4rem 0;color:' + T.textMuted + '">Load your candidates CSV to see this week&#39;s model output.</div>';
     regimeTag.style.display = 'none';
     fileLabel.textContent = 'No file loaded — run python src/main.py then load the CSV';
     const archBtn2 = document.getElementById('slate-archive-btn');
     if(archBtn2) archBtn2.style.display = 'none';
+    return;
+  }
+
+  if(slateData.sitOut === true){
+    const sitRegime = slateData.sitOutRegime || 'UNKNOWN';
+    const isBull = sitRegime.startsWith('BULL');
+    const isBear = sitRegime.startsWith('BEAR');
+    const regimeColor = isBull ? '#d4a017' : isBear ? '#a32d2d' : T.textMuted;
+    const SIT_REASONS = {
+      BULL_VOLATILE: 'Profit factor < 1.05 historically — high volatility and upward drift creates whipsaw that chops momentum signals.',
+      BULL_TREND:    'Profit factor ~1.00 historically — momentum signals get crowded and noisy in a steady bull market.',
+    };
+    const reason = SIT_REASONS[sitRegime] || 'Regime filter active — no edge detected this week.';
+    const dateStr = slateData.date || '';
+    const dateFormatted = dateStr
+      ? new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
+      : '—';
+    outputEl.innerHTML =
+      '<div style="padding:2rem;border-radius:10px;border:.5px solid ' + T.cardBorder + ';background:' + T.metricBg + ';text-align:center;margin-top:1rem;max-width:480px;margin-left:auto;margin-right:auto">'
+      + '<div style="font-size:22px;font-weight:700;letter-spacing:.08em;color:' + regimeColor + '">' + sitRegime.replace(/_/g,' ') + '</div>'
+      + '<div style="font-size:14px;color:' + T.textMuted + ';margin-top:6px">No trades this week</div>'
+      + '<div style="font-size:12px;color:' + T.textMuted + ';margin-top:8px;line-height:1.5">' + reason + '</div>'
+      + '<div style="font-size:11px;color:' + T.textMuted + ';margin-top:12px">Week of ' + dateFormatted + ' · Regime filter fired · 0 candidates</div>'
+      + '</div>';
+    fileLabel.textContent = 'Loaded: candidates_' + dateStr + '.csv · Sit-out week — regime filter active';
+    regimeTag.style.display = 'inline-block';
+    regimeTag.style.background = isBull ? '#fff4d6' : isBear ? '#fcebeb' : T.metricBg;
+    regimeTag.style.color      = isBull ? '#a07010' : isBear ? '#a32d2d' : T.textMuted;
+    regimeTag.textContent      = sitRegime.replace(/_/g,' ');
+    const archBtnSit = document.getElementById('slate-archive-btn');
+    if(archBtnSit) archBtnSit.style.display = 'inline-block';
     return;
   }
 
@@ -3088,7 +3133,9 @@ function renderSlateHistoryDropdown(){
     const realIdx = archive.length - 1 - ri;
     const opt = document.createElement('option');
     opt.value = realIdx;
-    opt.textContent = 'Week ' + s.week + (s.date ? '  ·  ' + s.date : '') + '  (' + s.rows.length + ' candidates)';
+    opt.textContent = s.sitOut
+      ? 'Week ' + s.week + (s.date ? '  ·  ' + s.date : '') + '  (sit-out)'
+      : 'Week ' + s.week + (s.date ? '  ·  ' + s.date : '') + '  (' + s.rows.length + ' candidates)';
     select.appendChild(opt);
   });
 }
@@ -3099,18 +3146,32 @@ function renderSlateHistory(idxStr){
   if(idxStr === ''){ el.innerHTML = ''; return; }
   const s = slatesStore.archive[parseInt(idxStr)];
   if(!s){ el.innerHTML = ''; return; }
-  const regime = s.rows[0]?.['Regime']||'UNKNOWN';
+  const regime = s.sitOut ? (s.sitOutRegime||'UNKNOWN') : (s.rows[0]?.['Regime']||'UNKNOWN');
   const rIsBear = regime.startsWith('BEAR');
-  const tagBg    = rIsBear ? '#fcebeb' : '#f0f4ff';
-  const tagColor = rIsBear ? '#a32d2d' : '#1a3a6e';
-  el.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.5rem;margin-top:.25rem">'
-    + '<div style="display:flex;align-items:center;gap:8px">'
-    + '<span style="font-size:12px;color:' + T.textMuted + '">Week ' + s.week + (s.date ? '  \u00b7  candidates_' + s.date + '.csv' : '') + '  \u00b7  ' + s.rows.length + ' candidates</span>'
-    + '<span style="font-size:11px;padding:2px 9px;border-radius:8px;font-weight:500;background:' + tagBg + ';color:' + tagColor + '">' + regime.replace('_',' ') + '</span>'
-    + '</div>'
-    + '<button onclick="deleteArchivedSlate(' + parseInt(idxStr) + ')" style="font-size:11px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;color:' + T.loss + ';border-color:' + T.loss + ';background:transparent;opacity:.7" title="Delete this archived week">🗑 delete</button>'
-    + '</div>'
-    + buildSlateTable(s.rows, false, T);
+  const rIsBull = regime.startsWith('BULL');
+  const tagBg    = rIsBear ? '#fcebeb' : rIsBull ? '#fff4d6' : '#f0f4ff';
+  const tagColor = rIsBear ? '#a32d2d' : rIsBull ? '#a07010' : '#1a3a6e';
+  const deleteBtn = '<button onclick="deleteArchivedSlate(' + parseInt(idxStr) + ')" style="font-size:11px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;color:' + T.loss + ';border-color:' + T.loss + ';background:transparent;opacity:.7" title="Delete this archived week">🗑 delete</button>';
+  if(s.sitOut){
+    const sitColor = rIsBull ? '#d4a017' : rIsBear ? '#a32d2d' : T.textMuted;
+    el.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.5rem;margin-top:.25rem">'
+      + '<div style="display:flex;align-items:center;gap:8px">'
+      + '<span style="font-size:12px;color:' + T.textMuted + '">Week ' + s.week + (s.date ? '  \u00b7  candidates_' + s.date + '.csv' : '') + '  \u00b7  <span style="color:' + sitColor + ';font-weight:500">Sit-out</span></span>'
+      + '<span style="font-size:11px;padding:2px 9px;border-radius:8px;font-weight:500;background:' + tagBg + ';color:' + tagColor + '">' + regime.replace(/_/g,' ') + '</span>'
+      + '</div>'
+      + deleteBtn
+      + '</div>'
+      + '<div style="font-size:12px;color:' + T.textMuted + ';font-style:italic;padding:.5rem 0">Regime filter · no trades</div>';
+  } else {
+    el.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:.5rem;margin-top:.25rem">'
+      + '<div style="display:flex;align-items:center;gap:8px">'
+      + '<span style="font-size:12px;color:' + T.textMuted + '">Week ' + s.week + (s.date ? '  \u00b7  candidates_' + s.date + '.csv' : '') + '  \u00b7  ' + s.rows.length + ' candidates</span>'
+      + '<span style="font-size:11px;padding:2px 9px;border-radius:8px;font-weight:500;background:' + tagBg + ';color:' + tagColor + '">' + regime.replace(/_/g,' ') + '</span>'
+      + '</div>'
+      + deleteBtn
+      + '</div>'
+      + buildSlateTable(s.rows, false, T);
+  }
 }
 
 

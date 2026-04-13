@@ -189,8 +189,19 @@ def save_daily_candidates(candidates: pd.DataFrame, regime: str = "UNKNOWN") -> 
     out_path = CANDIDATE_DIR / f"candidates_{today_str}.csv"
 
     if candidates.empty:
-        # Still create an empty file so you know the model ran
-        candidates.to_csv(out_path, index=False)
+        # Write a single sit-out row so the dashboard can detect the regime
+        sit_out = pd.DataFrame([{
+            'Ticker':       '',
+            'Signal Score': '',
+            'Entry Price':  '',
+            'Stop Price':   '',
+            'Target Price': '',
+            'Shares':       '',
+            'Return 1W':    '',
+            'RSI 14':       '',
+            'Regime':       regime,
+        }])
+        sit_out.to_csv(out_path, index=False)
     else:
         # Tag with current regime
         candidates["regime"] = regime
