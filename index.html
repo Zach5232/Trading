@@ -2899,6 +2899,12 @@ function archiveCurrentSlate(){
     regime = (outgoing.rows[0]['Regime'] || '').trim() || regime;
   }
   outgoing.week = weekNum;
+  console.log('ARCHIVE:', {
+    weekBeforeIncrement: weekNum,
+    weekAfterIncrement: weekNum + 1,
+    regime: regime,
+    sitOut: outgoing.sitOut || false
+  });
   slatesStore.archive.push(outgoing);
   slatesStore.current = null;
   weekNum = weekNum + 1;
@@ -3197,6 +3203,10 @@ function deleteArchivedSlate(idx){
     function(){
       slatesStore.archive.splice(idx, 1);
       saveSlates();
+      // Remove matching weeks[] entry and persist via save()
+      if(deletedWeek){
+        weeks = weeks.filter(w => w.week !== deletedWeek);
+      }
       // Delete note for this week from memory and Firestore
       if(deletedWeek){
         const wk = String(deletedWeek);
@@ -3208,8 +3218,9 @@ function deleteArchivedSlate(idx){
       // Roll weekNum back if this was the most recently archived week
       if(deletedWeek && deletedWeek === weekNum - 1){
         weekNum = weekNum - 1;
-        if(userRef) dbWrite(userRef.collection('settings').doc('state').set({weekNum, regime, intelOpen}));
       }
+      // Persist weeks[], weekNum, and regime together
+      save();
       // Reset dropdown and re-render everything affected
       const el = document.getElementById('slate-history-output');
       if(el) el.innerHTML = '';
