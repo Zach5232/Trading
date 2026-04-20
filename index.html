@@ -2486,9 +2486,9 @@ function nextWeek(){
     grade:grade.g,
     regime
   });
-  // archive current slate before advancing week
+  // archive current slate before advancing week (also increments weekNum + saves state)
   archiveCurrentSlate();
-  weekNum++;save();render();
+  save();render();
 }
 
 function prevHistoryPage(){
@@ -2891,9 +2891,23 @@ function saveSlates(){
 function archiveCurrentSlate(){
   if(!slatesStore.current) return;
   if(!slatesStore.current.sitOut && (!slatesStore.current.rows || !slatesStore.current.rows.length)) return;
-  slatesStore.current.week = weekNum;
-  slatesStore.archive.push(slatesStore.current);
+  // Capture outgoing regime from the slate before clearing it
+  const outgoing = slatesStore.current;
+  if(outgoing.sitOut){
+    regime = outgoing.sitOutRegime || regime;
+  } else if(outgoing.rows && outgoing.rows.length){
+    regime = outgoing.rows[0]['Regime'] || regime;
+  }
+  outgoing.week = weekNum;
+  slatesStore.archive.push(outgoing);
   slatesStore.current = null;
+  weekNum = weekNum + 1;
+  // Persist weekNum + regime to Firestore immediately
+  if(userRef) dbWrite(userRef.collection('settings').doc('state').set({weekNum, regime, intelOpen}));
+  // Update regime badge to reflect the new week's regime
+  const ri = REGIME_META[regime] || REGIME_META.UNKNOWN;
+  const b = document.getElementById('regime-badge');
+  if(b){ b.textContent = ri.l; b.className = 'badge ' + ri.c; }
   saveSlates();
   renderSlate();
   renderSlateHistoryDropdown();
