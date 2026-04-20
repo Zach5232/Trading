@@ -3190,15 +3190,32 @@ function renderSlateHistory(idxStr){
 
 
 function deleteArchivedSlate(idx){
+  const s = slatesStore.archive[idx];
+  const deletedWeek = s?.week;
   showDeleteConfirm(
-    'Delete archived slate for <strong>Week ' + (slatesStore.archive[idx]?.week||'?') + '</strong>?<br><span style="font-size:11px;opacity:.7">The candidate data will be removed. Your logged trades are not affected.</span>',
+    'Delete archived slate for <strong>Week ' + (deletedWeek||'?') + '</strong>?<br><span style="font-size:11px;opacity:.7">The candidate data and weekly note will be removed. Your logged trades are not affected.</span>',
     function(){
       slatesStore.archive.splice(idx, 1);
       saveSlates();
-      // reset dropdown output and re-render dropdown
+      // Delete note for this week from memory and Firestore
+      if(deletedWeek){
+        const wk = String(deletedWeek);
+        delete notesCache[wk];
+        delete notesSavedState[wk];
+        delete stockNoteOpen[wk];
+        if(userRef) dbWrite(userRef.collection('stock_weeks').doc(wk).delete());
+      }
+      // Roll weekNum back if this was the most recently archived week
+      if(deletedWeek && deletedWeek === weekNum - 1){
+        weekNum = weekNum - 1;
+        if(userRef) dbWrite(userRef.collection('settings').doc('state').set({weekNum, regime, intelOpen}));
+      }
+      // Reset dropdown and re-render everything affected
       const el = document.getElementById('slate-history-output');
       if(el) el.innerHTML = '';
       renderSlateHistoryDropdown();
+      renderNotesCard();
+      render();
     }
   );
 }
