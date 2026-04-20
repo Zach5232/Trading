@@ -2896,13 +2896,20 @@ function archiveCurrentSlate(){
   if(outgoing.sitOut){
     regime = outgoing.sitOutRegime || regime;
   } else if(outgoing.rows && outgoing.rows.length){
-    regime = outgoing.rows[0]['Regime'] || regime;
+    regime = (outgoing.rows[0]['Regime'] || '').trim() || regime;
   }
   outgoing.week = weekNum;
   slatesStore.archive.push(outgoing);
   slatesStore.current = null;
   weekNum = weekNum + 1;
   // Persist weekNum + regime to Firestore immediately
+  console.log('ARCHIVE DEBUG:', {
+    sitOut: slatesStore.current ? 'already nulled' : 'check outgoing',
+    outgoingSitOut: outgoing.sitOut,
+    outgoingSitOutRegime: outgoing.sitOutRegime,
+    outgoingRows0Regime: outgoing.rows && outgoing.rows[0] ? outgoing.rows[0]['Regime'] : 'no rows',
+    regimeGlobalAfterUpdate: regime
+  });
   if(userRef) dbWrite(userRef.collection('settings').doc('state').set({weekNum, regime, intelOpen}));
   // Update regime badge to reflect the new week's regime
   const ri = REGIME_META[regime] || REGIME_META.UNKNOWN;
@@ -2924,7 +2931,7 @@ function parseCSVRows(text){
     const firstVals = lines[1].split(',');
     const firstObj = {};
     headers.forEach((h,i)=>{ firstObj[h] = (firstVals[i]||'').trim(); });
-    sitOutRegime = firstObj['Regime'] || 'UNKNOWN';
+    sitOutRegime = (firstObj['Regime'] || '').trim() || 'UNKNOWN';
   }
   const rows = lines.slice(1).map(line=>{
     const vals = line.split(',');
@@ -3044,7 +3051,7 @@ function renderSlate(){
   }
 
   const rows = slateData.rows;
-  const regime = rows[0]['Regime'] || 'UNKNOWN';
+  const regime = (rows[0]['Regime'] || '').trim() || 'UNKNOWN';
   const date = slateData.date;
 
   fileLabel.textContent = date
@@ -3160,7 +3167,7 @@ function renderSlateHistory(idxStr){
   if(idxStr === ''){ el.innerHTML = ''; return; }
   const s = slatesStore.archive[parseInt(idxStr)];
   if(!s){ el.innerHTML = ''; return; }
-  const regime = s.sitOut ? (s.sitOutRegime||'UNKNOWN') : (s.rows[0]?.['Regime']||'UNKNOWN');
+  const regime = s.sitOut ? ((s.sitOutRegime||'').trim()||'UNKNOWN') : ((s.rows[0]?.['Regime']||'').trim()||'UNKNOWN');
   const rIsBear = regime.startsWith('BEAR');
   const rIsBull = regime.startsWith('BULL');
   const tagBg    = rIsBear ? '#fcebeb' : rIsBull ? '#fff4d6' : '#f0f4ff';
