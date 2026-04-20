@@ -2903,13 +2903,6 @@ function archiveCurrentSlate(){
   slatesStore.current = null;
   weekNum = weekNum + 1;
   // Persist weekNum + regime to Firestore immediately
-  console.log('ARCHIVE DEBUG:', {
-    sitOut: slatesStore.current ? 'already nulled' : 'check outgoing',
-    outgoingSitOut: outgoing.sitOut,
-    outgoingSitOutRegime: outgoing.sitOutRegime,
-    outgoingRows0Regime: outgoing.rows && outgoing.rows[0] ? outgoing.rows[0]['Regime'] : 'no rows',
-    regimeGlobalAfterUpdate: regime
-  });
   if(userRef) dbWrite(userRef.collection('settings').doc('state').set({weekNum, regime, intelOpen}));
   // Update regime badge to reflect the new week's regime
   const ri = REGIME_META[regime] || REGIME_META.UNKNOWN;
