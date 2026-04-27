@@ -324,6 +324,7 @@ canvas{width:100%!important}
 <!-- ── MAIN TAB NAV ── -->
 <div id="main-tab-nav" style="display:flex;gap:6px;margin-bottom:1rem;overflow-x:auto;padding-bottom:2px">
   <button id="tab-btn-stock" class="tab-btn active" onclick="showMainTab('stock')" style="white-space:nowrap">📈 Stock</button>
+  <button id="tab-btn-pool" class="tab-btn" onclick="showMainTab('pool')" style="white-space:nowrap">🎯 Candidate Pool</button>
   <button id="tab-btn-crypto" class="tab-btn" onclick="showMainTab('crypto')" style="white-space:nowrap">₿ Crypto</button>
   <button id="tab-btn-howto" class="tab-btn" onclick="showMainTab('howto')" style="white-space:nowrap">📖 How to Use</button>
 </div>
@@ -622,6 +623,51 @@ canvas{width:100%!important}
 </div>
 
 </div><!-- /main-stock -->
+
+<!-- ════════════════════════════════════════════════════
+     CANDIDATE POOL TAB
+     ════════════════════════════════════════════════════ -->
+<div id="tab-pool" style="display:none;padding-top:.5rem">
+
+  <!-- A: Disclaimer -->
+  <div id="pool-disclaimer" style="font-size:11px;margin-bottom:1rem"></div>
+
+  <!-- B: Summary metric cards -->
+  <div class="grid-4" style="margin-bottom:1rem">
+    <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
+      <div class="lbl">Total tracked</div>
+      <div class="val" id="pool-stat-total">—</div>
+    </div>
+    <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
+      <div class="lbl">Paper win rate</div>
+      <div class="val" id="pool-stat-winrate">—</div>
+    </div>
+    <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
+      <div class="lbl">Avg R (paper)</div>
+      <div class="val" id="pool-stat-avgr">—</div>
+    </div>
+    <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
+      <div class="lbl">Weeks tracked</div>
+      <div class="val" id="pool-stat-weeks">—</div>
+    </div>
+  </div>
+
+  <!-- C: Two-column analysis panels -->
+  <div class="grid-2" style="margin-bottom:1rem">
+    <div class="card">
+      <div class="ctitle">Score bucket win rate</div>
+      <div id="pool-buckets"></div>
+    </div>
+    <div class="card">
+      <div class="ctitle">Regime breakdown</div>
+      <div id="pool-regimes"></div>
+    </div>
+  </div>
+
+  <!-- D: Weekly candidate cards -->
+  <div id="pool-weeks-list"></div>
+
+</div><!-- /tab-pool -->
 
 <!-- ════════════════════════════════════════════════════
      CRYPTO TAB
@@ -3279,17 +3325,190 @@ function copyCmd(id, btn) {
   });
 }
 
+/* ── candidate pool tab ── */
+function renderCandidatePool() {
+  const T = THEME;
+
+  // Completed = entries where the paper outcome is known
+  const completed = candidatePool.filter(x => x.exitR !== null);
+  const totalTracked = candidatePool.length;
+  const wins = completed.filter(x => x.exitR > 0);
+  const paperWinRate = completed.length > 0 ? Math.round(wins.length / completed.length * 100) : null;
+  const avgR = completed.length > 0 ? completed.reduce((s, x) => s + x.exitR, 0) / completed.length : null;
+  const weeksTracked = new Set(candidatePool.map(x => x.week)).size;
+
+  // ── Disclaimer ──
+  const disc = document.getElementById('pool-disclaimer');
+  if (disc) { disc.textContent = 'Paper outcomes only — not included in live P&L or performance metrics'; disc.style.color = T.textMuted; }
+
+  // ── Metric cards ──
+  const elTotal = document.getElementById('pool-stat-total');
+  const elWR    = document.getElementById('pool-stat-winrate');
+  const elAvgR  = document.getElementById('pool-stat-avgr');
+  const elWeeks = document.getElementById('pool-stat-weeks');
+
+  if (elTotal) { elTotal.textContent = totalTracked || '—'; elTotal.style.color = T.textPrimary; }
+  if (elWR) {
+    if (paperWinRate === null) { elWR.textContent = '—'; elWR.style.color = T.textMuted; }
+    else { elWR.textContent = paperWinRate + '%'; elWR.style.color = paperWinRate > 50 ? T.win : T.loss; }
+  }
+  if (elAvgR) {
+    if (avgR === null) { elAvgR.textContent = '—'; elAvgR.style.color = T.textMuted; }
+    else { elAvgR.textContent = (avgR >= 0 ? '+' : '') + avgR.toFixed(2) + 'R'; elAvgR.style.color = avgR >= 0 ? T.win : T.loss; }
+  }
+  if (elWeeks) { elWeeks.textContent = weeksTracked || '—'; elWeeks.style.color = T.textPrimary; }
+
+  // ── Score bucket win rate ──
+  const bucketsEl = document.getElementById('pool-buckets');
+  if (bucketsEl) {
+    const buckets = [
+      {label:'0.90+',     min:0.90, max:1.01},
+      {label:'0.80–0.89', min:0.80, max:0.90},
+      {label:'0.70–0.79', min:0.70, max:0.80},
+      {label:'0.60–0.69', min:0.60, max:0.70},
+      {label:'< 0.60',    min:0,    max:0.60},
+    ];
+    bucketsEl.innerHTML = buckets.map(b => {
+      const grp  = completed.filter(x => x.score >= b.min && x.score < b.max);
+      const tot  = grp.length;
+      const wr   = tot > 0 ? grp.filter(x => x.exitR > 0).length / tot : null;
+      const barW = wr !== null ? Math.round(wr * 100) : 0;
+      const barC = wr !== null ? (wr >= 0.5 ? T.win : T.loss) : T.progressTrack;
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12px">
+        <span style="width:70px;color:${T.textMuted};flex-shrink:0">${b.label}</span>
+        <div style="flex:1;height:6px;background:${T.progressTrack};border-radius:3px;overflow:hidden">${tot ? `<div style="width:${barW}%;height:100%;background:${barC};border-radius:3px"></div>` : ''}</div>
+        <span style="width:90px;text-align:right;font-size:11px;color:${tot ? T.textPrimary : T.textMuted}">${tot ? `${tot} · ${Math.round(wr*100)}% win` : '—'}</span>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Regime breakdown ──
+  const regimesEl = document.getElementById('pool-regimes');
+  if (regimesEl) {
+    const regimes = ['BULL_VOLATILE','BULL_TREND','BEAR_VOLATILE','BEAR_TREND'];
+    regimesEl.innerHTML = regimes.map(reg => {
+      const grp  = completed.filter(x => x.regime === reg);
+      const tot  = grp.length;
+      const wr   = tot > 0 ? Math.round(grp.filter(x => x.exitR > 0).length / tot * 100) : null;
+      const rAvg = tot > 0 ? grp.reduce((s, x) => s + x.exitR, 0) / tot : null;
+      const isBull = reg.startsWith('BULL');
+      const bg    = isBull ? '#fff4d6' : '#fcebeb';
+      const fc    = isBull ? '#a07010' : '#a32d2d';
+      const label = reg.replace('_', ' ');
+      const avgC  = rAvg === null ? T.textMuted : (rAvg >= 0 ? T.win : T.loss);
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12px;flex-wrap:wrap">
+        <span style="background:${bg};color:${fc};padding:2px 7px;border-radius:8px;font-size:11px;font-weight:500;min-width:108px;text-align:center;flex-shrink:0">${label}</span>
+        <span style="color:${T.textMuted}">${tot ? `${tot} trade${tot!==1?'s':''}` : '—'}</span>
+        <span style="margin-left:auto;color:${avgC};font-weight:500">${rAvg!==null ? (rAvg>=0?'+':'')+rAvg.toFixed(2)+'R' : '—'}</span>
+        ${wr!==null ? `<span style="color:${T.textMuted};font-size:11px">${wr}%</span>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // ── Weekly candidate cards ──
+  const weeksList = document.getElementById('pool-weeks-list');
+  if (!weeksList) return;
+
+  if (!candidatePool.length) {
+    weeksList.innerHTML = `<div style="color:${T.textMuted};font-size:13px;text-align:center;padding:2rem 0">No candidate data yet — load a Monday slate to begin tracking.</div>`;
+    return;
+  }
+
+  // Group by week, sort descending
+  const byWeek = {};
+  candidatePool.forEach(c => { if (!byWeek[c.week]) byWeek[c.week] = []; byWeek[c.week].push(c); });
+  const sortedWeeks = Object.keys(byWeek).map(Number).sort((a, b) => b - a);
+
+  weeksList.innerHTML = sortedWeeks.map(wk => {
+    const items = byWeek[wk].slice().sort((a, b) => (b.score||0) - (a.score||0));
+    const reg   = items[0]?.regime || 'UNKNOWN';
+    const dateStr = items[0]?.date || '';
+    const takenCt = items.filter(x => x.taken).length;
+    const isBull = reg.startsWith('BULL');
+    const bg    = isBull ? '#fff4d6' : (reg.startsWith('BEAR') ? '#fcebeb' : '#f1efe8');
+    const fc    = isBull ? '#a07010' : (reg.startsWith('BEAR') ? '#a32d2d' : '#888780');
+    const regLabel = reg.replace('_', ' ');
+    let displayDate = dateStr;
+    if (dateStr) {
+      try { displayDate = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); } catch(e) {}
+    }
+    const allPending = items.every(x => x.exitR === null);
+
+    const tRows = items.map(c => {
+      const exitKnown = c.exitR !== null;
+      const rColor = exitKnown ? (c.exitR > 0 ? T.win : T.loss) : T.textMuted;
+      const exitText = exitKnown ? (c.exitR > 0 ? 'W' : 'L') : 'pending';
+      const rText  = exitKnown ? (c.exitR >= 0 ? '+' : '') + c.exitR.toFixed(2) + 'R' : '—';
+      const sBg    = c.taken ? 'rgba(31,186,133,0.12)' : T.progressTrack;
+      const sColor = c.taken ? T.win : T.textMuted;
+      const barW   = Math.round((c.score||0) * 80);
+      return `<tr>
+        <td style="padding:5px 6px;font-size:12px;font-weight:500;color:${T.textPrimary}">${c.ticker}</td>
+        <td style="padding:5px 6px"><div style="display:flex;align-items:center;gap:5px"><div style="width:${barW}px;height:4px;background:${T.win};border-radius:2px;opacity:.7;flex-shrink:0"></div><span style="font-size:11px;color:${T.textMuted}">${(c.score||0).toFixed(2)}</span></div></td>
+        <td style="padding:5px 6px;font-size:12px;color:${T.textPrimary}">${(c.entry||0).toFixed(2)}</td>
+        <td style="padding:5px 6px;font-size:12px;color:${T.textMuted}">${(c.stop||0).toFixed(2)}</td>
+        <td style="padding:5px 6px;font-size:12px;color:${T.textMuted}">${(c.target||0).toFixed(2)}</td>
+        <td style="padding:5px 6px;font-size:12px;color:${rColor};font-weight:500">${exitText}</td>
+        <td style="padding:5px 6px;font-size:12px;color:${rColor};font-weight:500">${rText}</td>
+        <td style="padding:5px 6px"><span style="background:${sBg};color:${sColor};font-size:11px;padding:2px 7px;border-radius:8px;font-weight:500">${c.taken ? 'traded' : 'sit-out'}</span></td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="card" style="margin-bottom:.75rem">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;flex-wrap:wrap">
+        <span style="font-size:13px;font-weight:500;color:${T.textPrimary}">Week ${wk}${displayDate ? ' — ' + displayDate : ''}</span>
+        <span style="background:${bg};color:${fc};padding:2px 7px;border-radius:8px;font-size:11px;font-weight:500">${regLabel}</span>
+        <span style="font-size:11px;color:${T.textMuted};margin-left:4px">${takenCt===0 ? '0 / '+items.length+' sit-out' : takenCt+' / '+items.length+' traded'}</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:480px">
+          <thead><tr style="border-bottom:.5px solid ${T.cardBorder}">
+            ${['Ticker','Score','Entry','Stop','Target','Exit','R','Status'].map(h=>`<th style="text-align:left;padding:4px 6px;font-size:10px;font-weight:500;color:${T.textMuted};text-transform:uppercase;letter-spacing:.04em">${h}</th>`).join('')}
+          </tr></thead>
+          <tbody>${tRows}</tbody>
+        </table>
+      </div>
+      ${allPending ? `<div style="font-size:11px;color:${T.textMuted};margin-top:.6rem;text-align:center">Outcomes pending — check back Friday</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+/* ── seed pool with sit-out week data if Firestore pool is empty ── */
+async function seedPoolIfEmpty() {
+  if (!userRef || candidatePool.length > 0) return;
+  const seeds = [
+    {week:5,date:'2026-04-13',ticker:'HIG', score:0.79,sector:'Financials',      entry:137.23,stop:133.36,target:144.97,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.68},
+    {week:5,date:'2026-04-13',ticker:'KIM', score:0.74,sector:'Real Estate',      entry: 23.17,stop: 22.56,target: 24.39,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.84},
+    {week:5,date:'2026-04-13',ticker:'AIG', score:0.73,sector:'Financials',       entry: 76.87,stop: 74.61,target: 81.38,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.80},
+    {week:5,date:'2026-04-13',ticker:'KO',  score:0.66,sector:'Consumer Staples', entry: 77.47,stop: 75.47,target: 81.47,regime:'BULL_VOLATILE',taken:false,outcome:'loss',exitR:-0.87},
+    {week:5,date:'2026-04-13',ticker:'ACGL',score:0.64,sector:'Financials',       entry: 95.97,stop: 93.24,target:101.42,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.59},
+    {week:6,date:'2026-04-20',ticker:'ACGL',score:0.92,sector:'Financials',       entry: 97.59,stop: 94.71,target:103.35,regime:'BULL_VOLATILE',taken:false,outcome:'loss',exitR:-0.49},
+    {week:6,date:'2026-04-20',ticker:'ROL', score:0.79,sector:'Industrials',      entry: 55.00,stop: 53.37,target: 58.25,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.98},
+    {week:6,date:'2026-04-20',ticker:'AEE', score:0.79,sector:'Utilities',        entry:112.71,stop:109.81,target:118.51,regime:'BULL_VOLATILE',taken:false,outcome:'loss',exitR:-0.55},
+    {week:6,date:'2026-04-20',ticker:'PG',  score:0.75,sector:'Consumer Staples', entry:146.93,stop:143.13,target:154.52,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.33},
+    {week:6,date:'2026-04-20',ticker:'UDR', score:0.74,sector:'Real Estate',      entry: 35.28,stop: 34.26,target: 37.33,regime:'BULL_VOLATILE',taken:false,outcome:'loss',exitR:-0.50},
+  ];
+  try {
+    await userRef.collection('data').doc('candidatePool').set({items: seeds});
+    candidatePool = seeds;
+    console.log('candidatePool seeded:', seeds.length, 'records');
+  } catch(e) { console.error('seedPoolIfEmpty error:', e); }
+}
+
 /* ── main tab switching ── */
 let _mainTab = 'stock';
 function showMainTab(tab) {
   _mainTab = tab;
   document.getElementById('main-stock').style.display  = tab === 'stock'  ? '' : 'none';
+  document.getElementById('tab-pool').style.display    = tab === 'pool'   ? '' : 'none';
   document.getElementById('main-crypto').style.display = tab === 'crypto' ? '' : 'none';
   document.getElementById('main-howto').style.display  = tab === 'howto'  ? '' : 'none';
   document.getElementById('tab-btn-stock').classList.toggle('active',  tab === 'stock');
+  document.getElementById('tab-btn-pool').classList.toggle('active',   tab === 'pool');
   document.getElementById('tab-btn-crypto').classList.toggle('active', tab === 'crypto');
   document.getElementById('tab-btn-howto').classList.toggle('active',  tab === 'howto');
   if (tab === 'crypto') { applyThemeCrypto(); buildCryptoEquityChart(); }
+  if (tab === 'pool')   { renderCandidatePool(); }
 }
 
 function applyThemeCrypto() {
@@ -4465,6 +4684,7 @@ async function bootUser(user){
   try{
     console.log('[AUTH] loading Firestore data...');
     await loadAllData();
+    await seedPoolIfEmpty();
     await loadCryptoData();
     console.log('[AUTH] loadAllData complete');
   }catch(e){console.error('[AUTH] loadAllData failed:',e);}
