@@ -3047,6 +3047,60 @@ function loadSlateCSV(input){
   reader.readAsText(file);
 }
 
+async function loadBackfillCSV(input){
+  const file = input.files[0];
+  if(!file || !userRef) return;
+  const slateData = getCurrentSlate();
+  if(!slateData || !slateData.sitOut) return;
+  const reader = new FileReader();
+  reader.onload = async function(e){
+    const parsed = parseCSVRows(e.target.result);
+    if(!parsed || !parsed.rows || !parsed.rows.length){ alert('No candidates found in this CSV.'); input.value=''; return; }
+    const {rows} = parsed;
+    const slateWeek = slateData.week || weekNum;
+    const dateStr   = slateData.date || '';
+    const regime    = slateData.sitOutRegime || 'UNKNOWN';
+    try{
+      const cpSnap = await userRef.collection('data').doc('candidatePool').get();
+      const existing = cpSnap.exists ? (cpSnap.data().items||[]) : [...candidatePool];
+      const updated = [...existing];
+      let added = 0;
+      rows.forEach(r=>{
+        const ticker = r['Ticker']||'';
+        if(!ticker) return;
+        const alreadyExists = updated.some(x=>x.week===slateWeek&&x.ticker===ticker);
+        if(!alreadyExists){
+          updated.push({
+            week:    slateWeek,
+            date:    dateStr,
+            ticker,
+            score:   parseFloat((parseFloat(r['Signal Score'])||0).toFixed(2)),
+            sector:  r['Sector']||'Unknown',
+            entry:   parseFloat(r['Entry Price'])||0,
+            stop:    parseFloat(r['Stop Price'])||0,
+            target:  parseFloat(r['Target Price'])||0,
+            regime,
+            taken:   false,
+            outcome: null,
+            exitR:   null
+          });
+          added++;
+        }
+      });
+      if(added > 0){
+        await userRef.collection('data').doc('candidatePool').set({items:updated});
+        candidatePool = updated;
+      }
+      const confirmEl = document.getElementById('backfill-csv-confirm');
+      if(confirmEl) confirmEl.textContent = added > 0 ? added+' candidates logged to pool' : 'Already present — no duplicates added';
+      input.value = '';
+      if(_mainTab === 'pool') renderCandidatePool();
+      console.log('loadBackfillCSV: '+added+' candidates logged for week', slateWeek);
+    }catch(e){ console.error('loadBackfillCSV error:',e); }
+  };
+  reader.readAsText(file);
+}
+
 function renderSlate(){
   const T = THEME;
   const outputEl = document.getElementById('slate-model-output');
@@ -3078,12 +3132,21 @@ function renderSlate(){
     const dateFormatted = dateStr
       ? new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'})
       : '—';
+    const backfillFilename = dateStr ? 'candidates_backfill_' + dateStr + '.csv' : 'candidates_backfill_YYYY-MM-DD.csv';
     outputEl.innerHTML =
       '<div style="padding:2rem;border-radius:10px;border:.5px solid ' + T.cardBorder + ';background:' + T.metricBg + ';text-align:center;margin-top:1rem;max-width:480px;margin-left:auto;margin-right:auto">'
       + '<div style="font-size:22px;font-weight:700;letter-spacing:.08em;color:' + regimeColor + '">' + sitRegime.replace(/_/g,' ') + '</div>'
       + '<div style="font-size:14px;color:' + T.textMuted + ';margin-top:6px">No trades this week</div>'
       + '<div style="font-size:12px;color:' + T.textMuted + ';margin-top:8px;line-height:1.5">' + reason + '</div>'
       + '<div style="font-size:11px;color:' + T.textMuted + ';margin-top:12px">Week of ' + dateFormatted + ' · Regime filter fired · 0 candidates</div>'
+      + '</div>'
+      + '<div style="margin-top:1rem;padding:.75rem 1rem;border:.5px solid ' + T.cardBorder + ';border-radius:8px;max-width:480px;margin-left:auto;margin-right:auto">'
+      + '<div style="font-size:11px;color:' + T.textMuted + ';margin-bottom:.5rem;text-transform:uppercase;letter-spacing:.04em;font-weight:500">Log backfill candidates (optional)</div>'
+      + '<div style="font-size:11px;color:' + T.textMuted + ';margin-bottom:.6rem">Upload <span style="font-family:monospace;opacity:.8">' + backfillFilename + '</span> to track paper outcomes in the Candidate Pool tab</div>'
+      + '<label style="display:inline-block;cursor:pointer;font-size:11px;padding:4px 10px;border:.5px solid ' + T.btnBorder + ';border-radius:6px;background:' + T.btnBg + ';color:' + T.textPrimary + '">'
+      + 'Choose file <input type="file" accept=".csv" style="display:none" onchange="loadBackfillCSV(this)">'
+      + '</label>'
+      + '<span id="backfill-csv-confirm" style="margin-left:.6rem;font-size:11px;color:' + T.win + '"></span>'
       + '</div>';
     fileLabel.textContent = 'Loaded: candidates_' + dateStr + '.csv · Sit-out week — regime filter active';
     regimeTag.style.display = 'inline-block';
@@ -3474,14 +3537,16 @@ function renderCandidatePool() {
 }
 
 /* ── seed pool with sit-out week data if Firestore pool is empty ── */
-async function seedPoolIfEmpty() {
-  if (!userRef || candidatePool.length > 0) return;
-  const seeds = [
+async function migrateSitOutWeeks() {
+  if (!userRef) return;
+  const week5entries = [
     {week:5,date:'2026-04-13',ticker:'HIG', score:0.79,sector:'Financials',      entry:137.23,stop:133.36,target:144.97,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.68},
     {week:5,date:'2026-04-13',ticker:'KIM', score:0.74,sector:'Real Estate',      entry: 23.17,stop: 22.56,target: 24.39,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.84},
     {week:5,date:'2026-04-13',ticker:'AIG', score:0.73,sector:'Financials',       entry: 76.87,stop: 74.61,target: 81.38,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.80},
     {week:5,date:'2026-04-13',ticker:'KO',  score:0.66,sector:'Consumer Staples', entry: 77.47,stop: 75.47,target: 81.47,regime:'BULL_VOLATILE',taken:false,outcome:'loss',exitR:-0.87},
     {week:5,date:'2026-04-13',ticker:'ACGL',score:0.64,sector:'Financials',       entry: 95.97,stop: 93.24,target:101.42,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.59},
+  ];
+  const week6entries = [
     {week:6,date:'2026-04-20',ticker:'ACGL',score:0.92,sector:'Financials',       entry: 97.59,stop: 94.71,target:103.35,regime:'BULL_VOLATILE',taken:false,outcome:'loss',exitR:-0.49},
     {week:6,date:'2026-04-20',ticker:'ROL', score:0.79,sector:'Industrials',      entry: 55.00,stop: 53.37,target: 58.25,regime:'BULL_VOLATILE',taken:false,outcome:'win', exitR: 0.98},
     {week:6,date:'2026-04-20',ticker:'AEE', score:0.79,sector:'Utilities',        entry:112.71,stop:109.81,target:118.51,regime:'BULL_VOLATILE',taken:false,outcome:'loss',exitR:-0.55},
@@ -3489,10 +3554,25 @@ async function seedPoolIfEmpty() {
     {week:6,date:'2026-04-20',ticker:'UDR', score:0.74,sector:'Real Estate',      entry: 35.28,stop: 34.26,target: 37.33,regime:'BULL_VOLATILE',taken:false,outcome:'loss',exitR:-0.50},
   ];
   try {
-    await userRef.collection('data').doc('candidatePool').set({items: seeds});
-    candidatePool = seeds;
-    console.log('candidatePool seeded:', seeds.length, 'records');
-  } catch(e) { console.error('seedPoolIfEmpty error:', e); }
+    const cpSnap = await userRef.collection('data').doc('candidatePool').get();
+    const existing = cpSnap.exists ? (cpSnap.data().items||[]) : [...candidatePool];
+    const updated = [...existing];
+    let added = 0;
+    if (!existing.some(x => x.week === 5 && x.taken === false)) {
+      week5entries.forEach(e => { updated.push(e); added++; });
+    }
+    if (!existing.some(x => x.week === 6 && x.taken === false)) {
+      week6entries.forEach(e => { updated.push(e); added++; });
+    }
+    if (added > 0) {
+      await userRef.collection('data').doc('candidatePool').set({items: updated});
+      candidatePool = updated;
+      console.log('migrateSitOutWeeks: added', added, 'entries');
+      renderCandidatePool();
+    } else {
+      console.log('migrateSitOutWeeks: weeks 5 and 6 already present');
+    }
+  } catch(e) { console.error('migrateSitOutWeeks error:', e); }
 }
 
 /* ── main tab switching ── */
@@ -4684,7 +4764,7 @@ async function bootUser(user){
   try{
     console.log('[AUTH] loading Firestore data...');
     await loadAllData();
-    await seedPoolIfEmpty();
+    await migrateSitOutWeeks();
     await loadCryptoData();
     console.log('[AUTH] loadAllData complete');
   }catch(e){console.error('[AUTH] loadAllData failed:',e);}
