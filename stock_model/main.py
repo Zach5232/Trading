@@ -14,6 +14,7 @@ Daily flow:
 
 from __future__ import annotations
 
+import argparse
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -497,6 +498,153 @@ def run_daily_model(log_trades: bool = False) -> Path | None:
     return out_path
 
 
+# ------------------- BACKFILL MODE -------------------
+
+def run_backfill(backfill_date_str: str) -> Path | None:
+    """
+    Generate a candidate slate for a specific past date without the regime filter.
+
+    Uses the dated ohlcv_filtered snapshot when available (has SPY + adj_close),
+    falls back to Data/backtest_cache/ohlcv_5yr.csv otherwise.
+    Entry price is the open on the backfill date; falls back to prior-day close
+    if the open is missing for a ticker.
+    """
+    ensure_directories()
+
+    try:
+        backfill_dt = datetime.strptime(backfill_date_str, "%Y-%m-%d")
+    except ValueError:
+        print(f"!!! Invalid date format: '{backfill_date_str}'. Use YYYY-MM-DD.")
+        return None
+
+    backfill_ts = pd.Timestamp(backfill_dt)
+
+    print(f"\n{'='*60}")
+    print(f"  [BACKFILL] {backfill_date_str}")
+    print(f"{'='*60}")
+
+    # Prefer the dated filtered snapshot (has SPY for regime + adj_close).
+    # Fall back to the 5yr backtest cache if no snapshot exists for this date.
+    filtered_path = RAW_DATA_DIR / f"ohlcv_filtered_{backfill_date_str}.csv"
+    cache_path = DATA_DIR / "backtest_cache" / "ohlcv_5yr.csv"
+
+    if filtered_path.exists():
+        print(f">>> Loading dated snapshot: {filtered_path.name}")
+        price_data = pd.read_csv(filtered_path, parse_dates=["date"])
+    elif cache_path.exists():
+        print(f">>> Loading 5yr cache (no dated snapshot for {backfill_date_str}): {cache_path.name}")
+        price_data = pd.read_csv(cache_path, parse_dates=["date"])
+        if "adj_close" not in price_data.columns:
+            price_data["adj_close"] = price_data["close"]
+    else:
+        print("!!! No cached data found. Run the normal pipeline at least once to populate the cache.")
+        return None
+
+    # Slice to only the data the model would have seen on the backfill date.
+    price_data = price_data[price_data["date"] <= backfill_ts].copy()
+    if price_data.empty:
+        print(f"!!! No price data available on or before {backfill_date_str}")
+        return None
+    print(f"    Price data shape: {price_data.shape}  (up to {backfill_date_str})")
+
+    # --- Regime: classify and report, but do NOT filter ---
+    regime = classify_current_regime(price_data)
+    print(f"\n!!! BACKFILL MODE — Regime filter bypassed for historical tracking")
+    print(f"    Regime on {backfill_date_str}: {regime}")
+    if regime in ("BULL_TREND", "BULL_VOLATILE"):
+        print(f"    These candidates would NOT have been traded (sit-out week)")
+    print()
+
+    # --- Score and select candidates (identical to normal run) ---
+    print(">>> [BACKFILL] Computing signals & selecting candidates...")
+    signals = add_signals(price_data)
+    candidates = select_top_candidates(signals, max_trades=MAX_TRADES_PER_DAY)
+    print(f"    Candidates before sizing: {len(candidates)}")
+
+    if candidates.empty:
+        print(f"!!! No trade candidates found for {backfill_date_str}")
+        return None
+
+    # --- Entry price: use open on backfill date; fall back to prior close ---
+    open_prices = (
+        price_data[price_data["date"] == backfill_ts]
+        .set_index("ticker")["open"]
+        .to_dict()
+    )
+
+    cands_for_sizing = candidates.copy()
+    for idx, row in cands_for_sizing.iterrows():
+        ticker = row["ticker"]
+        if ticker in open_prices and pd.notna(open_prices[ticker]):
+            cands_for_sizing.at[idx, "close"] = open_prices[ticker]
+        else:
+            print(f"    Warning: no open for {ticker} on {backfill_date_str} — using prior close as entry")
+
+    # --- Size positions (uses the overridden close as entry) ---
+    print(">>> [BACKFILL] Sizing positions...")
+    sized = size_positions(cands_for_sizing)
+    print(f"    Candidates after sizing: {len(sized)}")
+
+    if sized.empty:
+        print("!!! No viable candidates after position sizing (ATR cap or zero shares).")
+        return None
+
+    # --- Sector / company metadata ---
+    sector_map = get_sector_map(save_path=str(RAW_DATA_DIR / "sector_map.csv"))
+    company_map = get_company_map(save_path=str(RAW_DATA_DIR / "sector_map.csv"))
+    sized["sector"] = sized["ticker"].map(sector_map).fillna("Other")
+    sized["company"] = sized["ticker"].map(company_map).fillna("")
+
+    # --- Build output DataFrame with canonical schema ---
+    out_df = sized.rename(columns={
+        "ticker":       "Ticker",
+        "ret_1w":       "Return 1W",
+        "rsi_14":       "RSI 14",
+        "signal_score": "Signal Score",
+        "entry_price":  "Entry Price",
+        "stop_price":   "Stop Price",
+        "shares":       "Shares",
+        "target_price": "Target Price",
+    }).copy()
+    out_df["Regime"] = regime
+    out_df = out_df.reset_index(drop=True)
+    out_df.insert(0, "Rank", range(1, len(out_df) + 1))
+
+    export_cols = [
+        "Rank", "Ticker", "Signal Score", "Entry Price", "Stop Price",
+        "Target Price", "Shares", "Return 1W", "RSI 14", "Regime",
+    ]
+    present_cols = [c for c in export_cols if c in out_df.columns]
+    out_df = out_df[present_cols]
+    for col in ["Signal Score", "Entry Price", "Stop Price", "Target Price", "Return 1W", "RSI 14"]:
+        if col in out_df.columns:
+            out_df[col] = out_df[col].round(2)
+
+    # --- Save CSV ---
+    out_path = CANDIDATE_DIR / f"candidates_backfill_{backfill_date_str}.csv"
+    out_df.to_csv(out_path, index=False)
+    print(f">>> [BACKFILL] Saved: {out_path.name}")
+
+    # --- Terminal summary table ---
+    print(f"\n{'='*60}")
+    print(f"  [BACKFILL] Top candidates — {backfill_date_str}  (Regime: {regime})")
+    print(f"{'='*60}")
+    print(f"  {'Rank':<5} {'Ticker':<8} {'Score':>7} {'Entry':>8} {'Stop':>8} {'Target':>8} {'Shares':>6}")
+    print(f"  {'-'*54}")
+    for _, row in out_df.iterrows():
+        print(
+            f"  {int(row['Rank']):<5} {str(row['Ticker']):<8}"
+            f" {float(row.get('Signal Score', 0)):>7.3f}"
+            f" {float(row.get('Entry Price', 0)):>8.2f}"
+            f" {float(row.get('Stop Price', 0)):>8.2f}"
+            f" {float(row.get('Target Price', 0)):>8.2f}"
+            f" {int(row.get('Shares', 0)):>6}"
+        )
+    print()
+
+    return out_path
+
+
 # ------------------- CSV SCHEMA VALIDATION -------------------
 
 REQUIRED_COLUMNS = [
@@ -526,5 +674,16 @@ def validate_csv_schema(df: pd.DataFrame) -> None:
 
 
 if __name__ == "__main__":
-    # Set log_trades=True if you want to automatically append to execution_log.csv
-    run_daily_model(log_trades=False)
+    parser = argparse.ArgumentParser(description="Stock Swing Bet Model")
+    parser.add_argument(
+        "--backfill",
+        metavar="DATE",
+        help="Generate backfill candidates for a past date (YYYY-MM-DD). Regime filter is bypassed.",
+    )
+    args = parser.parse_args()
+
+    if args.backfill:
+        run_backfill(args.backfill)
+    else:
+        # Set log_trades=True if you want to automatically append to execution_log.csv
+        run_daily_model(log_trades=False)
