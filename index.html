@@ -3506,17 +3506,20 @@ function renderCandidatePool() {
       const rColor = exitKnown ? (c.exitR > 0 ? T.win : T.loss) : T.textMuted;
       const exitText = exitKnown ? (c.exitR > 0 ? 'W' : 'L') : 'pending';
       const rText  = exitKnown ? (c.exitR >= 0 ? '+' : '') + c.exitR.toFixed(2) + 'R' : '—';
+      const rCell  = exitKnown
+        ? `<td style="padding:5px 6px;font-size:12px;color:${rColor};font-weight:500">${rText}</td>`
+        : `<td style="padding:5px 6px"><button onclick="poolEditRow(${wk},'${c.ticker}')" style="font-size:11px;background:transparent;border:none;color:${T.textMuted};cursor:pointer;padding:0" title="Enter outcome">✎</button></td>`;
       const sBg    = c.taken ? 'rgba(31,186,133,0.12)' : T.progressTrack;
       const sColor = c.taken ? T.win : T.textMuted;
       const barW   = Math.round((c.score||0) * 80);
-      return `<tr>
+      return `<tr id="pool-row-${wk}-${c.ticker}">
         <td style="padding:5px 6px;font-size:12px;font-weight:500;color:${T.textPrimary}">${c.ticker}</td>
         <td style="padding:5px 6px"><div style="display:flex;align-items:center;gap:5px"><div style="width:${barW}px;height:4px;background:${T.win};border-radius:2px;opacity:.7;flex-shrink:0"></div><span style="font-size:11px;color:${T.textMuted}">${(c.score||0).toFixed(2)}</span></div></td>
         <td style="padding:5px 6px;font-size:12px;color:${T.textPrimary}">${(c.entry||0).toFixed(2)}</td>
         <td style="padding:5px 6px;font-size:12px;color:${T.textMuted}">${(c.stop||0).toFixed(2)}</td>
         <td style="padding:5px 6px;font-size:12px;color:${T.textMuted}">${(c.target||0).toFixed(2)}</td>
         <td style="padding:5px 6px;font-size:12px;color:${rColor};font-weight:500">${exitText}</td>
-        <td style="padding:5px 6px;font-size:12px;color:${rColor};font-weight:500">${rText}</td>
+        ${rCell}
         <td style="padding:5px 6px"><span style="background:${sBg};color:${sColor};font-size:11px;padding:2px 7px;border-radius:8px;font-weight:500">${c.taken ? 'traded' : 'sit-out'}</span></td>
       </tr>`;
     }).join('');
@@ -3538,6 +3541,50 @@ function renderCandidatePool() {
       ${allPending ? `<div style="font-size:11px;color:${T.textMuted};margin-top:.6rem;text-align:center">Outcomes pending — check back Friday</div>` : ''}
     </div>`;
   }).join('');
+}
+
+/* ── inline outcome editing for pending candidate pool rows ── */
+function poolEditRow(wk, ticker) {
+  const T = THEME;
+  const rowEl = document.getElementById('pool-row-' + wk + '-' + ticker);
+  if (!rowEl) return;
+  rowEl.innerHTML =
+    `<td colspan="8" style="padding:6px 6px">
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        <span style="font-size:12px;font-weight:500;color:${T.textPrimary}">${ticker}</span>
+        <input id="pool-edit-r-${wk}-${ticker}" type="number" step="0.01"
+          placeholder="e.g. 0.68 or -0.55"
+          style="width:140px;font-size:12px;padding:3px 7px;border-radius:6px;border:.5px solid ${T.btnBorder};background:${T.inputBg};color:${T.textPrimary}">
+        <select id="pool-edit-oc-${wk}-${ticker}"
+          style="font-size:12px;padding:3px 7px;border-radius:6px;border:.5px solid ${T.btnBorder};background:${T.inputBg};color:${T.textPrimary}">
+          <option value="win">win</option>
+          <option value="loss">loss</option>
+        </select>
+        <button onclick="poolSaveRow(${wk},'${ticker}')"
+          style="font-size:11px;padding:3px 10px;border-radius:6px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${T.textPrimary};cursor:pointer">Save</button>
+        <button onclick="renderCandidatePool()"
+          style="font-size:11px;padding:3px 10px;border-radius:6px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${T.textMuted};cursor:pointer">Cancel</button>
+      </div>
+    </td>`;
+}
+
+async function poolSaveRow(wk, ticker) {
+  if (!userRef) return;
+  const rInput  = document.getElementById('pool-edit-r-'  + wk + '-' + ticker);
+  const ocInput = document.getElementById('pool-edit-oc-' + wk + '-' + ticker);
+  if (!rInput || !ocInput) return;
+  const exitR = parseFloat(rInput.value);
+  if (isNaN(exitR)) { rInput.style.borderColor = '#e55555'; rInput.focus(); return; }
+  const outcome = ocInput.value;
+  const idx = candidatePool.findIndex(x => x.week === wk && x.ticker === ticker);
+  if (idx === -1) return;
+  candidatePool[idx].exitR   = parseFloat(exitR.toFixed(3));
+  candidatePool[idx].outcome = outcome;
+  try {
+    await userRef.collection('data').doc('candidatePool').set({items: candidatePool});
+    console.log('poolSaveRow: saved', ticker, 'week', wk, outcome, exitR);
+  } catch(e) { console.error('poolSaveRow error:', e); }
+  renderCandidatePool();
 }
 
 /* ── seed pool with sit-out week data if Firestore pool is empty ── */
@@ -3577,6 +3624,35 @@ async function migrateSitOutWeeks() {
       console.log('migrateSitOutWeeks: weeks 5 and 6 already present');
     }
   } catch(e) { console.error('migrateSitOutWeeks error:', e); }
+}
+
+/* ── one-time migration: populate known week 7 outcomes ── */
+async function migrateWeek7Outcomes() {
+  if (!userRef) return;
+  const wk7 = candidatePool.filter(x => x.week === 7);
+  if (!wk7.length) return;
+  if (wk7.some(x => x.exitR !== null)) { console.log('migrateWeek7Outcomes: already done'); return; }
+  const outcomes = {
+    PG:   {outcome:'loss', exitR:-0.21},
+    AFL:  {outcome:'loss', exitR:-0.55},
+    AES:  {outcome:'loss', exitR:-1.91},
+    EQR:  {outcome:'win',  exitR: 0.88},
+    ORLY: {outcome:'win',  exitR: 1.41},
+  };
+  let updated = false;
+  candidatePool.forEach(x => {
+    if (x.week === 7 && outcomes[x.ticker]) {
+      x.outcome = outcomes[x.ticker].outcome;
+      x.exitR   = outcomes[x.ticker].exitR;
+      updated = true;
+    }
+  });
+  if (!updated) return;
+  try {
+    await userRef.collection('data').doc('candidatePool').set({items: candidatePool});
+    console.log('migrateWeek7Outcomes: week 7 outcomes written');
+    renderCandidatePool();
+  } catch(e) { console.error('migrateWeek7Outcomes error:', e); }
 }
 
 /* ── main tab switching ── */
@@ -4769,6 +4845,7 @@ async function bootUser(user){
     console.log('[AUTH] loading Firestore data...');
     await loadAllData();
     await migrateSitOutWeeks();
+    await migrateWeek7Outcomes();
     await loadCryptoData();
     console.log('[AUTH] loadAllData complete');
   }catch(e){console.error('[AUTH] loadAllData failed:',e);}
