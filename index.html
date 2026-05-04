@@ -2520,19 +2520,7 @@ function editClosedPrice(i){
 }
 
 function nextWeek(){
-  const wc=closed.filter(t=>t.closeWeek===weekNum);
-  const grade=getGrade(wc);
-  weeks.push({
-    week:weekNum,
-    trades:wc.length,
-    wins:wc.filter(t=>t.pnl>0).length,
-    losses:wc.filter(t=>t.pnl<=0).length,
-    pnl:wc.reduce((s,t)=>s+t.pnl,0),
-    totalR:wc.reduce((s,t)=>s+(t.r||0),0),
-    grade:grade.g,
-    regime
-  });
-  // archive current slate before advancing week (also increments weekNum + saves state)
+  // weeks.push and weekNum increment are both owned by archiveCurrentSlate()
   archiveCurrentSlate();
   save();render();
 }
@@ -2944,6 +2932,20 @@ function archiveCurrentSlate(){
   } else if(outgoing.rows && outgoing.rows.length){
     regime = (outgoing.rows[0]['Regime'] || '').trim() || regime;
   }
+  // Stamp the historical weeks[] record with weekNum BEFORE any increment
+  const wc = closed.filter(t => t.closeWeek === weekNum);
+  const grade = getGrade(wc);
+  weeks.push({
+    week:   weekNum,
+    trades: wc.length,
+    wins:   wc.filter(t => t.pnl > 0).length,
+    losses: wc.filter(t => t.pnl <= 0).length,
+    pnl:    wc.reduce((s, t) => s + t.pnl, 0),
+    totalR: wc.reduce((s, t) => s + (t.r || 0), 0),
+    grade:  grade.g,
+    regime
+  });
+  // Stamp the archive entry with the same weekNum (still before increment)
   outgoing.week = weekNum;
   console.log('ARCHIVE:', {
     weekBeforeIncrement: weekNum,
@@ -2956,6 +2958,8 @@ function archiveCurrentSlate(){
   weekNum = weekNum + 1;
   // Persist weekNum + regime to Firestore immediately
   if(userRef) dbWrite(userRef.collection('settings').doc('state').set({weekNum, regime, intelOpen}));
+  // Persist updated weeks[] to Firestore (needed when called directly from "Archive week" button)
+  if(userRef) dbWrite(userRef.collection('data').doc('weeks').set({items:weeks}));
   // Update regime badge to reflect the new week's regime
   const ri = REGIME_META[regime] || REGIME_META.UNKNOWN;
   const b = document.getElementById('regime-badge');
