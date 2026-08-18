@@ -14,7 +14,8 @@ Responsibilities:
         * 14-day RSI
         * 14-day ATR
         * 20-day average volume
-    - Apply basic filters (price, volume, ATR%, RSI caps)
+    - Apply basic filters (price, volume, ATR%). RSI is computed and
+      reported but is NOT a hard filter (removed in V2).
     - Build a combined signal_score
     - Select top trade candidates for the day
 """
@@ -23,6 +24,20 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+
+
+# ---------- V2 hard-filter thresholds (shared with main.py) ----------
+# These are the single source of truth for filter thresholds used both by
+# add_signals()'s eligibility mask and by main.py's diagnostic candidate-pool
+# rejection-reason breakdown, so the two never drift apart.
+MIN_PRICE = 20.0              # F3 — replaces V1's $5 minimum. No upper bound.
+MIN_AVG_VOL = 1_000_000
+ATR_STOP_MULTIPLE = 0.75      # V2 stop = entry - 0.75 * ATR (was 1.5x in V1)
+MAX_STOP_DIST_PCT = 0.08      # hard cap on stop distance as a fraction of entry
+MIN_RET_3W = 0.10             # F1 — 3-week return floor
+MIN_VOL_SURGE = 1.0           # F2 — volume vs 20d average floor
+MIN_DIST_52W = -0.30          # F5 — must be within 30% of the 52-week high
+EXCLUDED_SECTOR = "Materials"  # F4
 
 
 # ---------- Indicator helpers ----------
@@ -68,7 +83,10 @@ def compute_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
 
 # ---------- Core signal engine ----------
 
-def add_signals(price_data: pd.DataFrame) -> pd.DataFrame:
+def add_signals(
+    price_data: pd.DataFrame,
+    sector_map: dict[str, str] | None = None,
+) -> pd.DataFrame:
     """
     For each ticker, compute:
       - 1-week (5 trading days) momentum: ret_1w
@@ -76,17 +94,28 @@ def add_signals(price_data: pd.DataFrame) -> pd.DataFrame:
       - 14-day RSI: rsi_14
       - 14-day ATR: atr_14
       - 20-day average volume: avg_vol_20
+      - 252-trading-day high (52-week high): high_252
 
     Then compute per-ticker latest row including:
       - price (latest close)
       - atr_pct (ATR as % of price)
-      - is_eligible flag from filters
+      - sector (from sector_map, 'Other' if unmapped)
+      - vol_surge (volume vs 20-day average)
+      - dist_52w (distance from the 52-week high, as a decimal)
+      - is_eligible flag from the V2 hard filters (F1-F5 plus the V1 filters)
       - signal_score
       - direction (currently 'LONG' or 'NONE')
+
+    Parameters
+    ----------
+    sector_map : dict[str, str] | None
+        {ticker: sector} mapping used for the Materials-sector exclusion (F4).
+        Tickers not present map to 'Other'.
 
     Returns a DataFrame with one row per ticker (latest date).
     """
     df = price_data.copy()
+    sector_map = sector_map or {}
 
     all_frames = []
     for ticker, grp in df.groupby("ticker", sort=False):
@@ -106,6 +135,10 @@ def add_signals(price_data: pd.DataFrame) -> pd.DataFrame:
         if "avg_vol_20" not in g.columns:
             g["avg_vol_20"] = g["volume"].rolling(20, min_periods=20).mean()
 
+        # 52-week high (min_periods=1 so this degrades gracefully to a
+        # shorter-window high when fewer than 252 days of history exist).
+        g["high_252"] = g["high"].rolling(252, min_periods=1).max()
+
         all_frames.append(g)
 
     df_signals = pd.concat(all_frames)
@@ -121,70 +154,54 @@ def add_signals(price_data: pd.DataFrame) -> pd.DataFrame:
     # Derived metrics
     latest["price"] = latest["close"]
     latest["atr_pct"] = latest["atr_14"] / latest["close"]
+    latest["sector"] = latest["ticker"].map(sector_map).fillna("Other")
+    latest["vol_surge"] = latest["volume"] / latest["avg_vol_20"].replace(0, np.nan)
+    latest["dist_52w"] = (latest["close"] - latest["high_252"]) / latest["high_252"]
 
-    # ------------------ Filters (tunable) ------------------
-    min_price = 5.0
-    max_price = 300.0
-    min_avg_vol = 1_000_000
-    # Stop distance = 1.5 × ATR / entry. Cap at 3% so no candidate
-    # can ever produce a stop wider than the model rules allow.
-    # Equivalent to: ATR% must be <= 0.02 (2% of price).
-    max_stop_dist_pct = 0.03   # 1.5 × ATR / entry <= 3%
-    rsi_lower_cap = 30         # avoid too crushed for momentum longs
-    rsi_upper_cap = 70         # avoid too extended / blow-off
-    # -------------------------------------------------------
+    # Stop distance = ATR_STOP_MULTIPLE × ATR / entry.
+    latest["stop_dist_pct"] = (ATR_STOP_MULTIPLE * latest["atr_14"]) / latest["price"]
 
-    # Compute the actual stop distance a candidate would receive
-    latest["stop_dist_pct"] = (1.5 * latest["atr_14"]) / latest["price"]
-
+    # NOTE: rsi_14 is intentionally NOT part of the eligibility condition.
+    # V2 backtesting showed the RSI>70 "overbought" cap excluded good
+    # momentum trades, so it was removed as a hard filter. RSI is still
+    # computed above and reported in both the pool and candidates CSVs —
+    # it's diagnostic/informational only now, never exclusionary.
     cond = (
-        (latest["price"] >= min_price)
-        & (latest["price"] <= max_price)
-        & (latest["avg_vol_20"] >= min_avg_vol)
-        & (latest["stop_dist_pct"] <= max_stop_dist_pct)
-        & (latest["rsi_14"] >= rsi_lower_cap)
-        & (latest["rsi_14"] <= rsi_upper_cap)
+        (latest["price"] >= MIN_PRICE)                                   # F3
+        & (latest["avg_vol_20"] >= MIN_AVG_VOL)
+        & (latest["stop_dist_pct"] <= MAX_STOP_DIST_PCT)
+        & (latest["ret_3w"].fillna(-np.inf) >= MIN_RET_3W)                # F1
+        & (latest["vol_surge"].fillna(0.0) >= MIN_VOL_SURGE)              # F2
+        & (latest["sector"] != EXCLUDED_SECTOR)                          # F4
+        & (latest["dist_52w"].fillna(-np.inf) >= MIN_DIST_52W)            # F5
     )
 
     latest["is_eligible"] = cond
 
-    # --- Percentile rank scoring (across eligible universe only) ---
-    # Step 1: compute ranks only on eligible rows
-    eligible_mask = latest["is_eligible"]
+    # --- Percentile rank scoring (across the FULL universe) ---
+    # Every ticker gets a real percentile-rank score — not just tickers that
+    # pass the hard filters — so the candidate-pool diagnostic can show a
+    # genuine, non-zero score for rejected tickers too (for comparison /
+    # near-miss analysis). Hard-filter pass/fail is tracked independently
+    # via is_eligible/direction below, so a non-zero score on an ineligible
+    # ticker does NOT make it tradeable.
+    latest["rank_1w"] = latest["ret_1w"].fillna(0.0).rank(pct=True)
+    latest["rank_3w"] = latest["ret_3w"].fillna(0.0).rank(pct=True)
+    latest["rank_vol_surge"] = latest["vol_surge"].fillna(0.0).rank(pct=True)
 
-    latest["rank_1w"] = 0.0
-    latest["rank_3w"] = 0.0
-    latest["rank_vol_surge"] = 0.0
-
-    if eligible_mask.sum() > 1:
-        eligible_idx = latest[eligible_mask].index
-
-        latest.loc[eligible_idx, "rank_1w"] = (
-            latest.loc[eligible_idx, "ret_1w"]
-            .fillna(0.0)
-            .rank(pct=True)
-        )
-        latest.loc[eligible_idx, "rank_3w"] = (
-            latest.loc[eligible_idx, "ret_3w"]
-            .fillna(0.0)
-            .rank(pct=True)
-        )
-        # Volume surge = today's volume vs 20-day avg
-        vol_ratio = latest.loc[eligible_idx, "volume"] / latest.loc[eligible_idx, "avg_vol_20"].replace(0, float("nan"))
-        latest.loc[eligible_idx, "rank_vol_surge"] = vol_ratio.fillna(0.0).rank(pct=True)
-
-    # Step 2: weighted composite score
+    # Weighted composite score (same weights as before)
     latest["score_raw"] = (
         0.40 * latest["rank_1w"]
         + 0.40 * latest["rank_3w"]
         + 0.20 * latest["rank_vol_surge"]
     )
+    latest["signal_score"] = latest["score_raw"]
 
-    # Step 3: zero out ineligible rows
-    latest["signal_score"] = latest["score_raw"].where(eligible_mask, 0.0)
-
-    # For now, we are long-only: positive scores -> LONG, else NONE
-    latest["direction"] = np.where(latest["signal_score"] > 0, "LONG", "NONE")
+    # Long-only: a ticker is only a real trade candidate if it clears every
+    # hard filter — independent of how it scores relative to the rest of
+    # the universe, since a mediocre name in a weak week can still "win"
+    # the percentile rank without meeting the model's actual entry bar.
+    latest["direction"] = np.where(latest["is_eligible"], "LONG", "NONE")
 
     return latest
 

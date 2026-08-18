@@ -15,15 +15,36 @@ Daily flow:
 from __future__ import annotations
 
 import argparse
-from collections import Counter
+import re
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 import os
 
 import pandas as pd
 
-from data_loader import get_sp500_tickers, download_ohlcv_data, get_sector_map, get_company_map
-from model_logic import add_signals, select_top_candidates, classify_current_regime
+from data_loader import (
+    get_sp500_tickers,
+    fetch_price_data,
+    get_sector_map,
+    get_company_map,
+    SECTOR_ETF_MAP,
+    fetch_sector_etf_return_3w,
+    fetch_next_week_earnings,
+)
+from model_logic import (
+    add_signals,
+    select_top_candidates,
+    classify_current_regime,
+    MIN_PRICE,
+    MIN_AVG_VOL,
+    MAX_STOP_DIST_PCT,
+    MIN_RET_3W,
+    MIN_VOL_SURGE,
+    MIN_DIST_52W,
+    EXCLUDED_SECTOR,
+    ATR_STOP_MULTIPLE,
+)
 from position_sizing import (
     RiskConfig,
     compute_stop_price_long,
@@ -37,20 +58,36 @@ from trade_logger import append_execution_log
 # Approximate account equity (update this as needed)
 ACCOUNT_EQUITY = 10_000.0
 
-# Risk settings (can be tuned later)
+# Risk settings (can be tuned later). max_dollar_risk_per_trade is a
+# placeholder here — the V2 daily pipeline overrides it per-candidate with
+# RISK_NORMAL / RISK_BOOSTED (see run_daily_model). Backfill mode (which
+# can't compute filters_passed) uses this flat default.
 RISK_CONFIG = RiskConfig(
     account_equity=ACCOUNT_EQUITY,
     max_risk_per_trade_pct=0.005,      # 0.5% of equity
-    max_dollar_risk_per_trade=50.0,    # $50 max per trade
+    max_dollar_risk_per_trade=50.0,    # $50 max per trade (backfill default)
     max_notional_per_trade_pct=0.10,   # 10% of equity
 )
 
 # Signal / candidate settings
-MAX_TRADES_PER_DAY = 5
-CANDIDATE_POOL_SIZE = 20   # rows written to candidate_pool_YYYY-MM-DD.csv
-PRICE_HISTORY_PERIOD = "6mo"   # used by download_ohlcv_data
+TOP_N_CANDIDATES = 3      # V2: top 3 (was top 5 in V1)
+# V2 needs a full year of history for the 52-week-high filter (F5); V1 only
+# needed 6mo. This is a data-volume change, not a change to the download
+# mechanism itself.
+PRICE_HISTORY_PERIOD = "1y"    # used by fetch_price_data
 PRICE_HISTORY_INTERVAL = "1d"
 FORCE_REFRESH_TICKERS = True
+
+# V2 week-level / candidate-level gates
+# Recalibrated for full-universe percentile ranking (was 0.05, calibrated
+# for the old eligible-subset-only ranking where scores spread 0-1 among a
+# small pool; top candidates now cluster tightly near the top of the full
+# 500+ ticker distribution, so the old threshold almost never fires).
+SCORE_GAP_THRESHOLD = 0.01
+RISK_NORMAL = 35.0
+RISK_BOOSTED = 70.0
+FILTERS_BOOSTED_THRESHOLD = 8   # filters_passed >= this -> 2x risk sizing
+ETF_MIN_3W_RETURN = 0.01
 
 # File paths (relative to project root)
 PROJECT_ROOT = Path(__file__).resolve().parent   # Trading/stock_model/
@@ -85,15 +122,21 @@ def build_universe() -> list[str]:
 
 def load_price_data(tickers: list[str]) -> pd.DataFrame:
     """
-    Download recent OHLCV data and apply basic price/volume filters.
-    Returns a long-format DataFrame with all eligible tickers.
+    Download recent OHLCV data for the full universe.
+
+    V2 does NOT pre-filter by price/volume here. The real hard filters
+    (MIN_PRICE, MIN_AVG_VOL, etc.) live in model_logic.add_signals(), which
+    needs to see every ticker — including cheap/thin ones — so the
+    candidate-pool diagnostic can report a genuine rejection reason for
+    each instead of silently dropping it before signals are ever computed.
+    A ticker only ends up missing from the returned data if yfinance
+    couldn't return anything for it at all (bad symbol, delisted, etc.);
+    save_candidate_pool() reconciles those as 'rejected_no_data'.
     """
-    df = download_ohlcv_data(
+    df = fetch_price_data(
         tickers=tickers,
         period=PRICE_HISTORY_PERIOD,
         interval=PRICE_HISTORY_INTERVAL,
-        min_price=5.0,
-        min_volume=1_000_000,
     )
     if df.empty:
         return df
@@ -114,19 +157,14 @@ def load_price_data(tickers: list[str]) -> pd.DataFrame:
     return df
 
 
-def compute_trade_candidates(price_data: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute signals and select the top trade candidates.
-    """
-    signals = add_signals(price_data)
-    candidates = select_top_candidates(signals, max_trades=MAX_TRADES_PER_DAY)
-    return candidates
-
-
 def size_positions(candidates: pd.DataFrame) -> pd.DataFrame:
     """
     Given a candidates DataFrame (from model_logic.select_top_candidates),
     compute stop levels and position sizes for each candidate.
+
+    Used by backfill mode. The V2 daily pipeline (run_daily_model) does its
+    own sizing pass instead, since it needs per-candidate dynamic risk
+    dollars (RISK_NORMAL / RISK_BOOSTED) based on filters_passed.
     """
     df = candidates.copy()
 
@@ -149,9 +187,12 @@ def size_positions(candidates: pd.DataFrame) -> pd.DataFrame:
         entry = float(row["entry_price"])
         atr = float(row["atr_14"])
 
-        stop = compute_stop_price_long(entry_price=entry, atr=atr, atr_multiple=1.5)
+        stop = compute_stop_price_long(
+            entry_price=entry, atr=atr, atr_multiple=ATR_STOP_MULTIPLE,
+            max_stop_dist_pct=MAX_STOP_DIST_PCT,
+        )
 
-        # None means stop distance exceeded the 3% cap — reject this candidate
+        # None means stop distance exceeded the cap — reject this candidate
         if stop is None:
             stop_prices.append(None)
             shares_list.append(0)
@@ -182,76 +223,123 @@ def size_positions(candidates: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def save_daily_candidates(candidates: pd.DataFrame, regime: str = "UNKNOWN") -> Path:
+# Full V2 output column order (Change 10). Company is appended at the end —
+# it isn't part of the spec'd order but was present in V1 output, so it's
+# kept as an additive trailing column rather than dropped.
+CANDIDATE_COLUMN_ORDER = [
+    "Rank", "Ticker", "Signal Score", "Entry Price", "Stop Price", "Target Price",
+    "Shares", "Return 1W", "RSI 14", "Regime", "Sector",
+    "Filters Passed", "Score Gap", "Dist 52W", "Sector ETF", "Sector ETF 3W", "Accel",
+    "Company",
+]
+
+# Filenames matching exactly "candidates_YYYY-MM-DD.csv" — excludes the
+# _backup_, _backfill_, and candidate_pool_ variants.
+_CANDIDATES_FILENAME_RE = re.compile(r"^candidates_(\d{4}-\d{2}-\d{2})\.csv$")
+
+
+def save_sitout_csv(regime: str, score_gap: float, reason: str) -> Path:
     """
-    Save the sized candidates to a dated CSV and return the path.
+    Write a single sit-out row so the dashboard can detect the regime (empty
+    Ticker/Signal Score on row 1 = sit-out week, per Change 12/13).
     """
     today_str = datetime.today().strftime("%Y-%m-%d")
     out_path = CANDIDATE_DIR / f"candidates_{today_str}.csv"
 
-    if candidates.empty:
-        # Write a single sit-out row so the dashboard can detect the regime
-        sit_out = pd.DataFrame([{
-            'Ticker':       '',
-            'Signal Score': '',
-            'Entry Price':  '',
-            'Stop Price':   '',
-            'Target Price': '',
-            'Shares':       '',
-            'Return 1W':    '',
-            'RSI 14':       '',
-            'Regime':       regime,
-        }])
-        sit_out.to_csv(out_path, index=False)
-    else:
-        # Tag with current regime
-        candidates["regime"] = regime
-        # Round all numeric columns to 2 decimals for readability
-        for col in candidates.select_dtypes(include=["float", "int"]).columns:
-            candidates[col] = candidates[col].round(2)
-        # Rename columns for readability
-        candidates = candidates.rename(columns={
-            "date": "Date",
-            "open": "Open",
-            "high": "High",
-            "low": "Low",
-            "close": "Close",
-            "adj_close": "Adj Close",
-            "volume": "Volume",
-            "ticker": "Ticker",
-            "company": "Company",
-            "sector": "Sector",
-            "avg_vol_20": "20d Avg Volume",
-            "ret_1w": "Return 1W",
-            "ret_3w": "Return 3W",
-            "rsi_14": "RSI 14",
-            "atr_14": "ATR 14",
-            "price": "Price",
-            "atr_pct": "ATR %",
-            "is_eligible": "Eligible",
-            "score_raw": "Raw Score",
-            "signal_score": "Signal Score",
-            "direction": "Direction",
-            "entry_price": "Entry Price",
-            "stop_price": "Stop Price",
-            "shares": "Shares",
-            "target_price": "Target Price",
-            "rank_1w": "Rank 1W",
-            "rank_3w": "Rank 3W",
-            "rank_vol_surge": "Rank Vol Surge",
-            "regime": "Regime",
-        })
-        # Add rank as first column
-        candidates = candidates.reset_index(drop=True)
-        candidates.insert(0, 'Rank', range(1, len(candidates) + 1))
-        # Reorder columns: Rank, Ticker, Sector, Regime, Shares, Entry Price, Stop Price, Target Price, then the rest
-        priority_cols = ["Rank", "Ticker", "Company", "Sector", "Regime", "Shares", "Entry Price", "Stop Price", "Target Price"]
-        remaining_cols = [col for col in candidates.columns if col not in priority_cols]
-        candidates = candidates[priority_cols + remaining_cols]
-        validate_csv_schema(candidates)
-        candidates.to_csv(out_path, index=False)
-
+    sit_out = pd.DataFrame([{
+        "Ticker":       "",
+        "Signal Score": "",
+        "Entry Price":  "",
+        "Stop Price":   "",
+        "Target Price": "",
+        "Shares":       "",
+        "Return 1W":    "",
+        "RSI 14":       "",
+        "Regime":       regime,
+        "Score Gap":    round(score_gap, 3),
+        "Reason":       reason,
+    }])
+    sit_out.to_csv(out_path, index=False)
     return out_path
+
+
+def save_candidates_csv(candidates: pd.DataFrame, regime: str, score_gap: float) -> Path:
+    """
+    Save the final, sized V2 candidate slate to a dated CSV and return the path.
+    """
+    today_str = datetime.today().strftime("%Y-%m-%d")
+    out_path = CANDIDATE_DIR / f"candidates_{today_str}.csv"
+
+    df = candidates.reset_index(drop=True).copy()
+    df.insert(0, "Rank", range(1, len(df) + 1))
+    df["regime"] = regime
+    df["score_gap"] = round(score_gap, 3)
+
+    df = df.rename(columns={
+        "ticker": "Ticker",
+        "signal_score": "Signal Score",
+        "entry_price": "Entry Price",
+        "stop_price": "Stop Price",
+        "target_price": "Target Price",
+        "shares": "Shares",
+        "ret_1w": "Return 1W",
+        "rsi_14": "RSI 14",
+        "regime": "Regime",
+        "sector": "Sector",
+        "filters_passed": "Filters Passed",
+        "score_gap": "Score Gap",
+        "dist_52w": "Dist 52W",
+        "sector_etf": "Sector ETF",
+        "sector_etf_3w": "Sector ETF 3W",
+        "f_accel": "Accel",
+        "company": "Company",
+    })
+
+    for col in ["Signal Score", "Entry Price", "Stop Price", "Target Price", "Return 1W", "RSI 14"]:
+        df[col] = df[col].astype(float).round(2)
+    for col in ["Dist 52W", "Sector ETF 3W"]:
+        df[col] = df[col].astype(float).round(4)
+
+    present_cols = [c for c in CANDIDATE_COLUMN_ORDER if c in df.columns]
+    df = df[present_cols]
+
+    validate_csv_schema(df)
+    df.to_csv(out_path, index=False)
+    return out_path
+
+
+def get_last_week_tickers(candidate_dir: Path, today_str: str) -> set[str]:
+    """
+    Change 4 (repeat-appearance filter): read the Ticker column from the
+    most recent candidates_YYYY-MM-DD.csv (excluding today's file, and
+    excluding _backup_/_backfill_/candidate_pool_ variants). Returns an
+    empty set if no prior file exists (first run).
+    """
+    dated: list[tuple[str, Path]] = []
+    for p in candidate_dir.glob("candidates_*.csv"):
+        m = _CANDIDATES_FILENAME_RE.match(p.name)
+        if m and m.group(1) != today_str:
+            dated.append((m.group(1), p))
+
+    if not dated:
+        return set()
+
+    dated.sort(key=lambda x: x[0], reverse=True)
+    latest_path = dated[0][1]
+
+    try:
+        df = pd.read_csv(latest_path)
+    except Exception as exc:
+        print(f"    Warning: could not read {latest_path.name} for repeat filter: {exc}")
+        return set()
+
+    if "Ticker" not in df.columns:
+        return set()
+
+    tickers = df["Ticker"].dropna().astype(str)
+    tickers = tickers[tickers.str.strip() != ""]
+    print(f"    Repeat filter: comparing against {latest_path.name} ({len(tickers)} tickers)")
+    return set(tickers.str.upper())
 
 
 def maybe_log_trades(candidates: pd.DataFrame, log_trades: bool) -> None:
@@ -292,22 +380,37 @@ def maybe_log_trades(candidates: pd.DataFrame, log_trades: bool) -> None:
 def _rejection_status(row: pd.Series) -> str:
     """
     Return the primary rejection reason for a signals-row that did not make
-    the final slate.  Filters are checked in priority order so each ticker
-    gets exactly one label.
+    the final slate. Filters are checked in priority order so each ticker
+    gets exactly one label. Mirrors the V2 hard filters (F1-F5) applied in
+    model_logic.add_signals(); does NOT reflect the pipeline-level filters
+    (score gap, repeat, sector ETF, earnings) since those depend on live
+    pipeline state not available at this diagnostic-pool stage.
+
+    RSI is intentionally NOT checked here — it's no longer a hard filter
+    (see model_logic.add_signals), just a reported/diagnostic column.
     """
     price        = row.get("price", 0) or 0
     avg_vol      = row.get("avg_vol_20", 0) or 0
-    rsi          = row.get("rsi_14", float("nan"))
     stop_dist    = row.get("stop_dist_pct", float("nan"))
+    ret_3w       = row.get("ret_3w", float("nan"))
+    vol_surge    = row.get("vol_surge", float("nan"))
+    sector       = row.get("sector", "")
+    dist_52w     = row.get("dist_52w", float("nan"))
 
-    if pd.isna(price) or price < 5.0 or price > 300.0:
+    if pd.isna(price) or price < MIN_PRICE:
         return "rejected_price"
-    if pd.isna(avg_vol) or avg_vol < 1_000_000:
+    if pd.isna(avg_vol) or avg_vol < MIN_AVG_VOL:
         return "rejected_volume"
-    if pd.isna(rsi) or rsi < 30 or rsi > 70:
-        return "rejected_rsi"
-    if pd.isna(stop_dist) or stop_dist > 0.03:
+    if pd.isna(stop_dist) or stop_dist > MAX_STOP_DIST_PCT:
         return "rejected_stop"
+    if pd.isna(ret_3w) or ret_3w < MIN_RET_3W:
+        return "rejected_ret_3w"
+    if pd.isna(vol_surge) or vol_surge < MIN_VOL_SURGE:
+        return "rejected_vol_surge"
+    if sector == EXCLUDED_SECTOR:
+        return "rejected_sector"
+    if pd.isna(dist_52w) or dist_52w < MIN_DIST_52W:
+        return "rejected_52w_high"
     return "not_selected"
 
 
@@ -316,18 +419,26 @@ def save_candidate_pool(
     final_candidates: pd.DataFrame,
     sector_map: dict,
     company_map: dict,
+    universe_tickers: list[str] | None = None,
 ) -> Path:
     """
-    Write Results/candidates/candidate_pool_YYYY-MM-DD.csv with the top
-    CANDIDATE_POOL_SIZE tickers by signal_score and their status.
+    Write Results/candidates/candidate_pool_YYYY-MM-DD.csv with every ticker
+    in the universe, ranked by signal_score, and their status.
     Also prints a rejection-reason summary to the terminal.
+
+    universe_tickers, if given, is reconciled against `signals` — any
+    universe ticker with no row in `signals` at all (yfinance returned
+    nothing for it, or it was dropped upstream for stale/insufficient
+    history) is still written to the pool with Status='rejected_no_data'.
     """
     today_str = datetime.today().strftime("%Y-%m-%d")
     out_path = CANDIDATE_DIR / f"candidate_pool_{today_str}.csv"
 
     final_tickers = set(final_candidates["ticker"].tolist()) if not final_candidates.empty else set()
 
-    pool = signals.sort_values("signal_score", ascending=False).head(CANDIDATE_POOL_SIZE).copy()
+    # SPY is only present for regime classification, not a real candidate —
+    # exclude it so the pool reflects the S&P 500 constituent universe only.
+    pool = signals[signals["ticker"] != "SPY"].sort_values("signal_score", ascending=False).copy()
 
     pool["status"] = pool.apply(
         lambda r: "passed" if r["ticker"] in final_tickers else _rejection_status(r),
@@ -336,7 +447,7 @@ def save_candidate_pool(
     pool["company"]      = pool["ticker"].map(company_map).fillna("")
     pool["sector"]       = pool["ticker"].map(sector_map).fillna("Other")
     pool["entry_price"]  = pool["close"]
-    pool["stop_price"]   = pool["entry_price"] - 1.5 * pool["atr_14"]
+    pool["stop_price"]   = pool["entry_price"] - ATR_STOP_MULTIPLE * pool["atr_14"]
     pool["stop_pct"]     = (pool["stop_dist_pct"] * 100).round(2)
     pool["target_price"] = pool["entry_price"] + 2.0 * (pool["entry_price"] - pool["stop_price"])
 
@@ -344,6 +455,7 @@ def save_candidate_pool(
         "ticker", "company", "sector",
         "entry_price", "stop_price", "stop_pct", "target_price",
         "signal_score", "status",
+        "ret_1w", "ret_3w", "vol_surge", "rsi_14", "atr_14",
     ]].rename(columns={
         "ticker":       "Ticker",
         "company":      "Company",
@@ -354,35 +466,97 @@ def save_candidate_pool(
         "target_price": "Target Price",
         "signal_score": "Signal Score",
         "status":       "Status",
+        "ret_1w":       "Return 1W",
+        "ret_3w":       "Return 3W",
+        "vol_surge":    "Vol Surge",
+        "rsi_14":       "RSI 14",
+        "atr_14":       "ATR 14",
     })
 
-    for col in ["Entry Price", "Stop Price", "Stop Pct", "Target Price", "Signal Score"]:
-        out[col] = out[col].round(2)
+    round_cols = [
+        "Entry Price", "Stop Price", "Stop Pct", "Target Price", "Signal Score",
+        "Return 1W", "Return 3W", "Vol Surge", "RSI 14", "ATR 14",
+    ]
+    for col in round_cols:
+        out[col] = out[col].round(4)
+
+    # Reconcile against the full universe: tickers with no row in `signals`
+    # at all couldn't be evaluated (no usable price data) — show them too.
+    no_data_count = 0
+    if universe_tickers:
+        present = set(pool["ticker"])
+        missing = [t for t in universe_tickers if t != "SPY" and t not in present]
+        no_data_count = len(missing)
+        if missing:
+            missing_rows = pd.DataFrame([{
+                "Ticker": t,
+                "Company": company_map.get(t, ""),
+                "Sector": sector_map.get(t, "Other"),
+                "Entry Price": "", "Stop Price": "", "Stop Pct": "", "Target Price": "",
+                "Signal Score": "", "Status": "rejected_no_data",
+                "Return 1W": "", "Return 3W": "", "Vol Surge": "", "RSI 14": "", "ATR 14": "",
+            } for t in missing])
+            out = pd.concat([out, missing_rows], ignore_index=True)
 
     out.to_csv(out_path, index=False)
 
     # Terminal summary
     counts = pool["status"].value_counts()
-    status_order = ["passed", "not_selected", "rejected_stop", "rejected_rsi", "rejected_volume", "rejected_price"]
-    print(f">>> Candidate pool summary (top {CANDIDATE_POOL_SIZE} by score):")
+    status_order = [
+        "passed", "not_selected",
+        "rejected_52w_high", "rejected_sector", "rejected_vol_surge", "rejected_ret_3w",
+        "rejected_stop", "rejected_volume", "rejected_price", "rejected_no_data",
+    ]
+    print(f">>> Candidate pool summary (all {len(out)} tickers, ranked by score):")
     for label in status_order:
-        n = int(counts.get(label, 0))
+        n = no_data_count if label == "rejected_no_data" else int(counts.get(label, 0))
         if n:
             print(f"    {label}: {n}")
 
     return out_path
 
 
+def print_candidate_table(selected: pd.DataFrame, score_gap: float) -> None:
+    """Change 11: terminal output for the final selected slate."""
+    print(f"\n{'Rank':<5}{'Ticker':<8}{'Score':>7}{'Entry':>9}{'Stop':>9}{'Target':>9}{'Shares':>8}{'Filters':>9}{'Accel':>7}")
+    print("-" * 70)
+    for i, row in enumerate(selected.itertuples(), start=1):
+        accel_mark = "✓" if row.f_accel else "✗"
+        print(
+            f"{i:<5}{row.ticker:<8}{row.signal_score:>7.2f}{row.entry_price:>9.2f}"
+            f"{row.stop_price:>9.2f}{row.target_price:>9.2f}{int(row.shares):>8}"
+            f"{int(row.filters_passed):>6}/9{accel_mark:>7}"
+        )
+
+    print(f"\nScore gap this week: {score_gap:.3f}")
+
+    normal_n = int((selected["filters_passed"] < FILTERS_BOOSTED_THRESHOLD).sum())
+    boosted_n = int((selected["filters_passed"] >= FILTERS_BOOSTED_THRESHOLD).sum())
+    print(f"Sizing: {normal_n} candidates at normal (${RISK_NORMAL:.0f} risk)")
+    print(f"Sizing: {boosted_n} candidates at 2x (${RISK_BOOSTED:.0f} risk) — {FILTERS_BOOSTED_THRESHOLD}+ filters passed")
+
+    flag_labels = [
+        ("vol", "f_vol"), ("gap", "f_gap"), ("fresh", "f_fresh"), ("sector", "f_sector"),
+        ("price", "f_price"), ("etf", "f_etf"), ("52w", "f_52w"), ("earn", "f_earn"), ("accel", "f_accel"),
+    ]
+    for row in selected.itertuples():
+        row_d = row._asdict()
+        parts = " ".join(f"{name}{'✓' if row_d[flag] else '✗'}" for name, flag in flag_labels)
+        print(f"{row.ticker}: {parts} ({int(row.filters_passed)}/9)")
+
+
 def run_daily_model(log_trades: bool = False) -> Path | None:
     """
-    Convenience wrapper to run the full daily pipeline end-to-end.
-    Returns the path to the candidates CSV, or None if no candidates.
+    Convenience wrapper to run the full V2 daily pipeline end-to-end.
+    Returns the path to the candidates CSV, or None if no price data.
     """
     ensure_directories()
+    today_str = datetime.today().strftime("%Y-%m-%d")
 
     print(">>> Building S&P 500 universe...")
     tickers = build_universe()
-    print(f"    Universe size: {len(tickers)} tickers")
+    sp500_tickers = [t for t in tickers if t != "SPY"]
+    print(f"    Universe size: {len(tickers)} tickers ({len(sp500_tickers)} S&P 500 constituents)")
 
     print(">>> Downloading price data...")
     price_data = load_price_data(tickers)
@@ -392,108 +566,160 @@ def run_daily_model(log_trades: bool = False) -> Path | None:
         print("!!! No price data returned after filters. Exiting.")
         return None
 
-    # --- Regime filter (Variation A) ---
+    # --- Regime: still calculated & reported (V2 no longer blocks on it) ---
     regime = classify_current_regime(price_data)
     print(f">>> Current market regime: {regime}")
-
-    if regime in ("BULL_TREND", "BULL_VOLATILE"):
-        print("!!! REGIME FILTER ACTIVE — No trades this week.")
-        print(f"    Regime '{regime}' has historically shown no edge (PF < 1.05).")
-        print("    Sit out this week. Re-run next Monday.")
-        empty = pd.DataFrame()
-        out_path = save_daily_candidates(empty, regime=regime)
-        print(f"    Empty candidates file saved to: {out_path}")
-        return out_path
-
-    print(">>> Computing signals & selecting candidates...")
-    signals = add_signals(price_data)
-    candidates = select_top_candidates(signals, max_trades=MAX_TRADES_PER_DAY)
-    print(f"    Candidates before sizing: {len(candidates)}")
-
-    if candidates.empty:
-        print("!!! No trade candidates found today.")
-        out_path = save_daily_candidates(candidates, regime=regime)
-        print(f"    Empty candidates file saved to: {out_path}")
-        return out_path
-
-    print(">>> Sizing positions...")
-    sized_candidates = size_positions(candidates)
-    print(f"    Candidates after sizing (shares > 0): {len(sized_candidates)}")
 
     print(">>> Looking up sectors and company names...")
     sector_map = get_sector_map(save_path=str(RAW_DATA_DIR / "sector_map.csv"))
     company_map = get_company_map(save_path=str(RAW_DATA_DIR / "sector_map.csv"))
-    sized_candidates["sector"] = sized_candidates["ticker"].map(sector_map).fillna("Other")
-    sized_candidates["company"] = sized_candidates["ticker"].map(company_map).fillna("")
-    print(f"    Sectors: {sized_candidates[['ticker','sector']].set_index('ticker')['sector'].to_dict()}")
 
-    out_path = save_daily_candidates(sized_candidates, regime=regime)
+    print(">>> Computing signals & applying hard filters (F1-F5)...")
+    signals = add_signals(price_data, sector_map=sector_map)
+    pool = signals[(signals["direction"] == "LONG") & (signals["is_eligible"])].copy()
+    print(f"    Candidates passing hard filters: {len(pool)}")
+
+    if pool.empty:
+        print("!!! No candidates passed hard filters this week")
+        out_path = save_sitout_csv(regime=regime, score_gap=0.0, reason="NO_CANDIDATES")
+        print(f"    Sit-out file saved to: {out_path}")
+        pool_path = save_candidate_pool(signals, pool, sector_map, company_map, universe_tickers=sp500_tickers)
+        print(f">>> Candidate pool saved to: {pool_path}")
+        return out_path
+
+    # --- Change 3: score gap gate (week-level) ---
+    score_gap = float(pool["signal_score"].max() - pool["signal_score"].min())
+    print(f">>> Score gap this week: {score_gap:.3f}")
+    if score_gap < SCORE_GAP_THRESHOLD:
+        print(
+            f"Score gap {score_gap:.3f} below threshold {SCORE_GAP_THRESHOLD:.2f} — "
+            f"field too bunched, no clear conviction this week"
+        )
+        out_path = save_sitout_csv(regime=regime, score_gap=score_gap, reason="LOW_SCORE_GAP")
+        print(f"    Sit-out file saved to: {out_path}")
+        pool_path = save_candidate_pool(signals, pd.DataFrame(), sector_map, company_map, universe_tickers=sp500_tickers)
+        print(f">>> Candidate pool saved to: {pool_path}")
+        return out_path
+
+    # --- Change 4: repeat-appearance filter ---
+    last_week_tickers = get_last_week_tickers(CANDIDATE_DIR, today_str)
+    if last_week_tickers:
+        before = len(pool)
+        pool = pool[~pool["ticker"].isin(last_week_tickers)].copy()
+        print(f"    Repeat filter: excluded {before - len(pool)} ticker(s) seen last week")
+
+    # --- Change 5: sector ETF momentum filter ---
+    if not pool.empty:
+        print(">>> Checking sector ETF momentum...")
+        etf_cache: dict[str, float | None] = {}
+        keep_mask, etf_list, etf_ret_list = [], [], []
+        for row in pool.itertuples():
+            etf = SECTOR_ETF_MAP.get(row.sector)
+            if etf is None:
+                # No ETF mapping for this sector (e.g. 'Other') — fail open.
+                keep_mask.append(True)
+                etf_list.append("")
+                etf_ret_list.append(float("nan"))
+                continue
+            etf_ret = fetch_sector_etf_return_3w(etf, etf_cache)
+            etf_list.append(etf)
+            etf_ret_list.append(etf_ret if etf_ret is not None else float("nan"))
+            if etf_ret is not None and etf_ret < ETF_MIN_3W_RETURN:
+                print(f"    {row.ticker} excluded — sector ETF {etf} only up {etf_ret*100:.1f}% 3W")
+                keep_mask.append(False)
+            else:
+                keep_mask.append(True)
+        pool["sector_etf"] = etf_list
+        pool["sector_etf_3w"] = etf_ret_list
+        pool = pool[keep_mask].copy()
+
+    # --- Change 6: earnings exclusion filter (only for survivors so far) ---
+    if not pool.empty:
+        print(">>> Checking upcoming earnings dates...")
+        week_start = pd.Timestamp(datetime.today().date())
+        next_monday = week_start + pd.Timedelta(days=7)
+        window_end = next_monday + pd.Timedelta(days=7)
+
+        earnings_cache: dict[str, list | None] = {}
+        keep_mask = []
+        for row in pool.itertuples():
+            has_earnings = fetch_next_week_earnings(row.ticker, next_monday, window_end, earnings_cache)
+            if has_earnings:
+                print(f"    {row.ticker} excluded — earnings next week")
+            keep_mask.append(not has_earnings)
+        pool = pool[keep_mask].copy()
+
+    if pool.empty:
+        print("!!! No candidates passed all filters this week")
+        out_path = save_sitout_csv(regime=regime, score_gap=score_gap, reason="NO_CANDIDATES")
+        print(f"    Sit-out file saved to: {out_path}")
+        pool_path = save_candidate_pool(signals, pd.DataFrame(), sector_map, company_map, universe_tickers=sp500_tickers)
+        print(f">>> Candidate pool saved to: {pool_path}")
+        return out_path
+
+    # --- Change 7: filter count per candidate (0-9) ---
+    pool["f_vol"]    = pool["vol_surge"] >= MIN_VOL_SURGE
+    pool["f_gap"]    = score_gap >= SCORE_GAP_THRESHOLD
+    pool["f_fresh"]  = ~pool["ticker"].isin(last_week_tickers)
+    pool["f_sector"] = pool["sector"] != EXCLUDED_SECTOR
+    pool["f_price"]  = pool["close"] >= MIN_PRICE
+    pool["f_etf"]    = pool["sector_etf_3w"].fillna(ETF_MIN_3W_RETURN) >= ETF_MIN_3W_RETURN
+    pool["f_52w"]    = pool["dist_52w"] >= MIN_DIST_52W
+    pool["f_earn"]   = True  # already filtered above; recorded for the audit trail
+    pool["f_accel"]  = pool["ret_1w"] > (pool["ret_3w"] / 3.0)  # sizing signal only, never excludes
+
+    filter_cols = ["f_vol", "f_gap", "f_fresh", "f_sector", "f_price", "f_etf", "f_52w", "f_earn", "f_accel"]
+    pool["filters_passed"] = pool[filter_cols].sum(axis=1).astype(int)
+
+    # --- Change 8: select top 3 by signal_score ---
+    pool = pool.sort_values("signal_score", ascending=False).reset_index(drop=True)
+    selected = pool.head(TOP_N_CANDIDATES).copy()
+    print(f">>> Selected {len(selected)} candidate(s) after all filters")
+
+    # --- Change 9: stop / target recalculation + dynamic position sizing ---
+    selected["entry_price"] = selected["close"]
+    stop_prices, targets, shares_list = [], [], []
+    for row in selected.itertuples():
+        entry = float(row.entry_price)
+        atr = float(row.atr_14)
+        stop = compute_stop_price_long(
+            entry_price=entry, atr=atr, atr_multiple=ATR_STOP_MULTIPLE,
+            max_stop_dist_pct=MAX_STOP_DIST_PCT,
+        )
+        if stop is None:
+            stop_prices.append(None); targets.append(None); shares_list.append(0)
+            continue
+        risk_per_share = max(entry - stop, 0.01)
+        target = entry + 2.0 * risk_per_share
+        risk_dollars = RISK_BOOSTED if row.filters_passed >= FILTERS_BOOSTED_THRESHOLD else RISK_NORMAL
+        risk_cfg = replace(RISK_CONFIG, max_dollar_risk_per_trade=risk_dollars)
+        shares = compute_position_size_long(entry_price=entry, stop_price=stop, risk_config=risk_cfg)
+        stop_prices.append(stop); targets.append(target); shares_list.append(shares)
+
+    selected["stop_price"] = stop_prices
+    selected["target_price"] = targets
+    selected["shares"] = shares_list
+    selected = selected[selected["shares"] > 0].reset_index(drop=True)
+
+    if selected.empty:
+        print("!!! No candidates passed all filters this week")
+        out_path = save_sitout_csv(regime=regime, score_gap=score_gap, reason="NO_CANDIDATES")
+        print(f"    Sit-out file saved to: {out_path}")
+        pool_path = save_candidate_pool(signals, pd.DataFrame(), sector_map, company_map, universe_tickers=sp500_tickers)
+        print(f">>> Candidate pool saved to: {pool_path}")
+        return out_path
+
+    selected["company"] = selected["ticker"].map(company_map).fillna("")
+
+    out_path = save_candidates_csv(selected, regime=regime, score_gap=score_gap)
     print(f">>> Daily candidates saved to: {out_path}")
 
-    # Sector concentration check
-    sector_counts = Counter(sized_candidates['sector'])
-    most_common_sector, most_common_count = sector_counts.most_common(1)[0]
+    print_candidate_table(selected, score_gap)
 
-    if most_common_count >= 3:
-        print(f"\n⚠️  SECTOR CONCENTRATION: {most_common_count}/5 candidates are {most_common_sector}")
-        print(f"   Main slate saved normally.")
-        print(f"\n   Want a diversified backup slate from ranks 6-10?")
-        print(f"   1 = Yes    2 = No")
-        choice = input("   Enter 1 or 2: ").strip()
-
-        if choice == '1':
-            df_all_sorted = signals.sort_values('signal_score', ascending=False).reset_index(drop=True)
-            df_remaining = df_all_sorted.iloc[MAX_TRADES_PER_DAY:MAX_TRADES_PER_DAY + 15].reset_index(drop=True)
-            backup_raw = df_remaining.head(5).copy()
-
-            backup_sized = size_positions(backup_raw)
-
-            if not backup_sized.empty:
-                backup_sized['sector'] = backup_sized['ticker'].map(sector_map).fillna('Other')
-                backup_sized['company'] = backup_sized['ticker'].map(company_map).fillna('')
-
-                backup_sector_counts = Counter(backup_sized['sector'])
-                backup_top_sector, backup_top_count = backup_sector_counts.most_common(1)[0]
-                if backup_top_count >= 4:
-                    print(f"\n⚠️  Backup slate is also heavily concentrated ({backup_top_count}/5 are {backup_top_sector})")
-                    print(f"   This may be a sector rotation week.")
-                    print(f"   Recommendation: take only ranks 1-2 or 1-3 from the main slate instead of a full 5-trade week.")
-                    print(f"   Saving backup anyway for reference.\n")
-
-                backup_sized['regime'] = regime
-                backup_sized = backup_sized.rename(columns={
-                    "ticker": "Ticker", "company": "Company", "sector": "Sector",
-                    "ret_1w": "Return 1W", "rsi_14": "RSI 14",
-                    "signal_score": "Signal Score", "entry_price": "Entry Price",
-                    "stop_price": "Stop Price", "shares": "Shares",
-                    "target_price": "Target Price", "regime": "Regime",
-                })
-                backup_sized = backup_sized.reset_index(drop=True)
-                backup_sized.insert(0, 'Rank', range(6, 6 + len(backup_sized)))
-
-                backup_cols = ["Rank", "Ticker", "Signal Score", "Entry Price", "Stop Price",
-                               "Target Price", "Shares", "Return 1W", "RSI 14", "Regime"]
-                backup_cols_present = [c for c in backup_cols if c in backup_sized.columns]
-                backup_out = backup_sized[backup_cols_present].copy()
-
-                for col in ["Signal Score", "Entry Price", "Stop Price", "Target Price", "Return 1W", "RSI 14"]:
-                    if col in backup_out.columns:
-                        backup_out[col] = backup_out[col].round(2)
-
-                today_str = datetime.today().strftime("%Y-%m-%d")
-                backup_path = CANDIDATE_DIR / f"candidates_backup_{today_str}.csv"
-                backup_out.to_csv(backup_path, index=False)
-                print(f"\n✅ Backup slate saved: candidates_backup_{today_str}.csv")
-                print(f"   Load via Load Monday Slate button if you want an alternative this week.")
-            else:
-                print("   No viable backup candidates found after sizing.")
-        else:
-            print("Done.")
-
-    pool_path = save_candidate_pool(signals, sized_candidates, sector_map, company_map)
+    pool_path = save_candidate_pool(signals, selected, sector_map, company_map, universe_tickers=sp500_tickers)
     print(f">>> Candidate pool saved to: {pool_path}")
 
-    maybe_log_trades(sized_candidates, log_trades=log_trades)
+    maybe_log_trades(selected, log_trades=log_trades)
 
     return out_path
 
@@ -555,10 +781,22 @@ def run_backfill(backfill_date_str: str) -> Path | None:
         print(f"    These candidates would NOT have been traded (sit-out week)")
     print()
 
-    # --- Score and select candidates (identical to normal run) ---
+    # --- Sector metadata (needed by add_signals for the Materials exclusion) ---
+    sector_map = get_sector_map(save_path=str(RAW_DATA_DIR / "sector_map.csv"))
+    company_map = get_company_map(save_path=str(RAW_DATA_DIR / "sector_map.csv"))
+
+    # --- Score and select candidates ---
+    # NOTE: backfill applies the V2 hard filters (F1-F5, via add_signals) and
+    # the V2 stop/target formula (via size_positions, below), since those are
+    # deterministic functions of price history. It intentionally does NOT
+    # apply the score-gap gate, repeat-appearance filter, sector ETF filter,
+    # or earnings filter — those depend on live pipeline state (last week's
+    # CSV, current ETF/earnings data) that can't be reconstructed accurately
+    # for a past date, and backfill instead uses a flat risk amount rather
+    # than the V2 filters_passed-based sizing.
     print(">>> [BACKFILL] Computing signals & selecting candidates...")
-    signals = add_signals(price_data)
-    candidates = select_top_candidates(signals, max_trades=MAX_TRADES_PER_DAY)
+    signals = add_signals(price_data, sector_map=sector_map)
+    candidates = select_top_candidates(signals, max_trades=TOP_N_CANDIDATES)
     print(f"    Candidates before sizing: {len(candidates)}")
 
     if candidates.empty:
@@ -589,10 +827,8 @@ def run_backfill(backfill_date_str: str) -> Path | None:
         print("!!! No viable candidates after position sizing (ATR cap or zero shares).")
         return None
 
-    # --- Sector / company metadata ---
-    sector_map = get_sector_map(save_path=str(RAW_DATA_DIR / "sector_map.csv"))
-    company_map = get_company_map(save_path=str(RAW_DATA_DIR / "sector_map.csv"))
-    sized["sector"] = sized["ticker"].map(sector_map).fillna("Other")
+    # sector/company columns for reference (sized["sector"] is already set by
+    # add_signals via sector_map; company still needs to be added)
     sized["company"] = sized["ticker"].map(company_map).fillna("")
 
     # --- Build output DataFrame with canonical schema ---
