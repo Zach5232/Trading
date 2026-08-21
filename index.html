@@ -279,6 +279,26 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:
   .c-form-grid{grid-template-columns:1fr 1fr}
 }
 canvas{width:100%!important}
+/* ── nav "More" dropdown (native <details>, no JS needed) ── */
+#main-tab-nav details{position:relative;margin-left:auto}
+#main-tab-nav summary{list-style:none}
+#main-tab-nav summary::-webkit-details-marker{display:none}
+.more-dropdown{position:absolute;right:0;top:calc(100% + 4px);background:#1a1a1a;border:.5px solid rgba(255,255,255,0.12);border-radius:8px;padding:6px;min-width:170px;z-index:500;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:4px}
+.more-dropdown .tab-btn{width:100%;text-align:left}
+/* ── compact metric variant for the slimmed performance-metrics row ── */
+.metric-slim{padding:.55rem .7rem}
+.metric-slim .val{font-size:18px}
+/* ── V2 slate table: filters/sizing/accel badges + mobile column hiding ── */
+.slate-badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:8px;font-weight:500;white-space:nowrap}
+.slate-sizing-abbrev{display:none}
+.slate-detail-row{display:none}
+.slate-detail-row.open{display:table-row}
+.slate-toggle{cursor:pointer;background:transparent;border:none;color:inherit;opacity:.55;font-size:11px;padding:0 0 0 4px}
+@media(max-width:640px){
+  .slate-hide-mobile{display:none}
+  .slate-sizing-full{display:none}
+  .slate-sizing-abbrev{display:inline}
+}
 .grid-6{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
 .grid-equity{display:grid;grid-template-columns:1fr 210px;gap:1rem}
 @media(max-width:600px){
@@ -322,12 +342,20 @@ canvas{width:100%!important}
 <div id="offline-banner" style="position:fixed;top:0;left:0;right:0;z-index:8999;display:none;align-items:center;justify-content:center;background:#ba7517;color:#fff;font-size:12px;padding:5px;text-align:center">⚠ Offline — changes will sync when reconnected</div>
 
 <!-- ── MAIN TAB NAV ── -->
-<div id="main-tab-nav" style="display:flex;gap:6px;margin-bottom:1rem;overflow-x:auto;padding-bottom:2px">
+<div id="main-tab-nav" style="display:flex;gap:6px;margin-bottom:.4rem;overflow-x:auto;padding-bottom:2px">
   <button id="tab-btn-stock" class="tab-btn active" onclick="showMainTab('stock')" style="white-space:nowrap">📈 Stock</button>
   <button id="tab-btn-pool" class="tab-btn" onclick="showMainTab('pool')" style="white-space:nowrap">🎯 Candidate Pool</button>
-  <button id="tab-btn-crypto" class="tab-btn" onclick="showMainTab('crypto')" style="white-space:nowrap">₿ Crypto</button>
   <button id="tab-btn-howto" class="tab-btn" onclick="showMainTab('howto')" style="white-space:nowrap">📖 How to Use</button>
+  <details id="more-nav">
+    <summary class="tab-btn" style="white-space:nowrap;cursor:pointer">More ▾</summary>
+    <div class="more-dropdown">
+      <button id="tab-btn-crypto" class="tab-btn" onclick="showMainTab('crypto');document.getElementById('more-nav').open=false" style="white-space:nowrap">₿ Crypto (legacy)</button>
+    </div>
+  </details>
 </div>
+
+<!-- ── SLIM STATUS BAR (Week · Regime · Date) — informational only, no badge styling ── -->
+<div id="week-status-bar" class="sub" style="margin:0 0 .9rem 2px;font-size:11px">—</div>
 
 <!-- ── STOCK TAB WRAPPER ── -->
 <div id="main-stock">
@@ -336,7 +364,9 @@ canvas{width:100%!important}
 <div class="hdr">
   <div>
     <span style="font-size:18px;font-weight:500">Swing model</span>
-    <span id="regime-badge" class="badge badge-unk" style="margin-left:10px">loading...</span>
+    <!-- regime badge removed from view per V2 (regime no longer blocks trading) — element kept
+         in the DOM (hidden) so existing render()/updateLiveDisplay() JS keeps working untouched -->
+    <span id="regime-badge" class="badge badge-unk" style="display:none">loading...</span>
   </div>
   <div style="display:flex;align-items:center;gap:10px">
     <span id="utime" style="font-size:12px">—</span>
@@ -347,63 +377,9 @@ canvas{width:100%!important}
 <div class="tagline" id="tagline-bar">—</div>
 
 <!-- ══════════════════════════════════════
-     ZONE 1 — THIS WEEK
-     Everything you touch Monday–Friday
+     1 — MONDAY MODEL OUTPUT
      ══════════════════════════════════════ -->
 
-<!-- LIVE METRICS (4 boxes) -->
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">This week — live</div>
-<div class="grid-4" style="margin-bottom:.75rem">
-  <div class="metric metric-live">
-    <div class="lbl">Live P&amp;L</div>
-    <div class="val" id="wk-live-pnl">$0.00</div>
-    <div class="sub" id="wk-live-r">0.00R this week</div>
-  </div>
-  <div class="metric metric-live">
-    <div class="lbl">Total shares</div>
-    <div class="val" id="wk-shares">0</div>
-    <div class="sub" id="wk-shares-sub">across 0 positions</div>
-  </div>
-  <div class="metric metric-live">
-    <div class="lbl">Max loss</div>
-    <div class="val" id="wk-risked">$0</div>
-    <div class="sub" id="wk-risked-sub">if all stops hit</div>
-    <div class="sub" id="wk-deployed-sub" style="margin-top:2px">$0 deployed</div>
-  </div>
-  <div class="metric metric-live">
-    <div class="lbl">Watching</div>
-    <div class="val" id="wk-watching">0</div>
-    <div class="sub" id="wk-watching-sub">stocks this week</div>
-  </div>
-</div>
-
-<!-- HOLIDAY BANNER -->
-<div id="holiday-banner" style="display:none"></div>
-
-<!-- OPEN POSITIONS -->
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Open positions</div>
-<div class="card">
-  <div class="ctitle">This week's slate</div>
-  <div id="slate-list"><div style="font-size:13px">No open positions — add trades below.</div></div>
-</div>
-
-<!-- LIVE P&L CHART -->
-<div class="card">
-  <div class="card-hdr">
-    <div>
-      <div class="ctitle" style="margin-bottom:4px">This week — live P&amp;L per position</div>
-      <div class="chart-legend">
-        <span><span class="legend-dot" id="leg-week-up" style="background:#1D9E75"></span><span style="font-size:11px">Profit</span></span>
-        <span><span class="legend-dot" style="background:#E24B4A"></span><span style="font-size:11px">Loss</span></span>
-      </div>
-    </div>
-    <div style="font-size:11px;text-align:right;font-style:italic" id="week-live-sub">open positions mark-to-market · refreshes every 60s</div>
-  </div>
-  <div style="position:relative;height:140px"><canvas id="week-chart"></canvas></div>
-  <div style="font-size:12px;margin-top:8px;text-align:center" id="week-no-trades">Add trades Monday to see live P&amp;L here.</div>
-</div>
-
-<!-- MONDAY MODEL OUTPUT -->
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Monday model output</div>
 <div class="card" id="slate-loader-card">
   <div class="card-hdr">
@@ -436,6 +412,59 @@ canvas{width:100%!important}
   </div>
 </div>
 
+<!-- ══════════════════════════════════════
+     2 — OPEN POSITIONS
+     ══════════════════════════════════════ -->
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Open positions</div>
+<div class="grid-4" style="margin-bottom:.75rem">
+  <div class="metric metric-live">
+    <div class="lbl">Live P&amp;L</div>
+    <div class="val" id="wk-live-pnl">$0.00</div>
+    <div class="sub" id="wk-live-r">0.00R this week</div>
+  </div>
+  <div class="metric metric-live">
+    <div class="lbl">Total shares</div>
+    <div class="val" id="wk-shares">0</div>
+    <div class="sub" id="wk-shares-sub">across 0 positions</div>
+  </div>
+  <div class="metric metric-live">
+    <div class="lbl">Max loss</div>
+    <div class="val" id="wk-risked">$0</div>
+    <div class="sub" id="wk-risked-sub">if all stops hit</div>
+    <div class="sub" id="wk-deployed-sub" style="margin-top:2px">$0 deployed</div>
+  </div>
+  <div class="metric metric-live">
+    <div class="lbl">Watching</div>
+    <div class="val" id="wk-watching">0</div>
+    <div class="sub" id="wk-watching-sub">stocks this week</div>
+  </div>
+</div>
+
+<!-- HOLIDAY BANNER -->
+<div id="holiday-banner" style="display:none"></div>
+
+<div class="card">
+  <div class="ctitle">This week's slate</div>
+  <div id="slate-list"><div style="font-size:13px">No open positions — add trades below.</div></div>
+</div>
+
+<!-- LIVE P&L CHART -->
+<div class="card">
+  <div class="card-hdr">
+    <div>
+      <div class="ctitle" style="margin-bottom:4px">This week — live P&amp;L per position</div>
+      <div class="chart-legend">
+        <span><span class="legend-dot" id="leg-week-up" style="background:#1D9E75"></span><span style="font-size:11px">Profit</span></span>
+        <span><span class="legend-dot" style="background:#E24B4A"></span><span style="font-size:11px">Loss</span></span>
+      </div>
+    </div>
+    <div style="font-size:11px;text-align:right;font-style:italic" id="week-live-sub">open positions mark-to-market · refreshes every 60s</div>
+  </div>
+  <div style="position:relative;height:140px"><canvas id="week-chart"></canvas></div>
+  <div style="font-size:12px;margin-top:8px;text-align:center" id="week-no-trades">Add trades Monday to see live P&amp;L here.</div>
+</div>
+
 <!-- LOG A TRADE -->
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Log a trade</div>
 <div class="card">
@@ -462,21 +491,81 @@ canvas{width:100%!important}
 </div>
 
 <!-- ══════════════════════════════════════
-     ZONE 2 — SEASON PERFORMANCE
-     Review on Fridays
+     3 — PERFORMANCE METRICS (slim)
      ══════════════════════════════════════ -->
 
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Weekly notes</div>
-
-<!-- OVERALL STATS (6 boxes) -->
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Performance metrics</div>
 <div class="grid-6" style="margin-bottom:.75rem">
-  <div class="metric"><div class="lbl">Total P&amp;L</div><div class="val" id="m-pnl">$0.00</div><div class="sub" id="m-r">0.00R all time</div></div>
-  <div class="metric"><div class="lbl">Win rate</div><div class="val" id="m-wr">—</div><div class="sub" id="m-wl">0W / 0L</div></div>
-  <div class="metric"><div class="lbl">Season record</div><div class="val" id="m-mkt">—</div><div class="sub" id="m-mkt-sub">0 weeks tracked</div></div>
-  <div class="metric"><div class="lbl">Streak</div><div class="val" id="m-streak">—</div><div class="sub" id="m-streak-sub">no trades yet</div></div>
-  <div class="metric"><div class="lbl">Profit Factor</div><div class="val" id="m-pf">—</div><div class="sub" id="m-pf-sub">gross W / gross L</div></div>
-  <div class="metric"><div class="lbl">Max Drawdown</div><div class="val" id="m-dd">—</div><div class="sub" id="m-dd-sub">peak to trough</div></div>
+  <div class="metric metric-slim"><div class="lbl">Total P&amp;L</div><div class="val" id="m-pnl">$0.00</div><div class="sub" id="m-r">0.00R all time</div></div>
+  <div class="metric metric-slim"><div class="lbl">Win rate</div><div class="val" id="m-wr">—</div><div class="sub" id="m-wl">0W / 0L</div></div>
+  <div class="metric metric-slim"><div class="lbl">Active weeks</div><div class="val" id="m-mkt">—</div><div class="sub" id="m-mkt-sub">0 weeks tracked</div></div>
+  <div class="metric metric-slim"><div class="lbl">Streak</div><div class="val" id="m-streak">—</div><div class="sub" id="m-streak-sub">no trades yet</div></div>
+  <div class="metric metric-slim"><div class="lbl">Profit Factor</div><div class="val" id="m-pf">—</div><div class="sub" id="m-pf-sub">gross W / gross L</div></div>
+  <div class="metric metric-slim"><div class="lbl">Max Drawdown</div><div class="val" id="m-dd">—</div><div class="sub" id="m-dd-sub">peak to trough</div></div>
 </div>
+
+<!-- ══════════════════════════════════════
+     3b — OPPORTUNISTIC PLAYS (Bucket 2)
+     Separate from the systematic model — never mixed into
+     systematic P&L or performance metrics.
+     ══════════════════════════════════════ -->
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Bucket 2</div>
+<div class="card" id="opp-plays-card">
+  <div class="card-hdr">
+    <div class="ctitle">🎯 Opportunistic plays</div>
+    <button class="toggle-btn" id="opp-toggle" onclick="oppToggleSection()">hide ▲</button>
+  </div>
+  <div id="opp-body">
+
+    <!-- Part A: criteria reminder -->
+    <div style="border-radius:8px;padding:.7rem .9rem;margin-bottom:.85rem;background:rgba(31,186,133,0.06);border:.5px solid rgba(31,186,133,0.15)">
+      <div style="font-size:11px;line-height:1.9">
+        <div><span style="color:#1fba85">✓</span> 3W return ≥ 20%</div>
+        <div><span style="color:#1fba85">✓</span> Momentum accelerating (1W &gt; 3W trend)</div>
+        <div><span style="color:#1fba85">✓</span> Volume above average</div>
+        <div><span style="color:#1fba85">✓</span> Not within 5% of 52W high</div>
+        <div><span style="color:#1fba85">✓</span> Dollar volume &gt; $100M/day</div>
+        <div><span style="color:#1fba85">✓</span> Max $500 deployed per play</div>
+        <div><span style="color:#1fba85">✓</span> Max 2 open at any time</div>
+      </div>
+    </div>
+
+    <!-- Part B: open plays -->
+    <div class="ctitle" style="margin-bottom:.5rem">Open plays</div>
+    <div id="opp-open-list" style="margin-bottom:.85rem"><div style="font-size:13px;opacity:.5">No open plays</div></div>
+
+    <!-- Part C: log new play -->
+    <button id="opp-log-toggle-btn" onclick="oppToggleLogForm()" style="min-width:80px;padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;min-height:44px">＋ Log new play</button>
+    <div id="opp-log-form" style="display:none;margin-top:.75rem;padding-top:.75rem;border-top:.5px solid rgba(255,255,255,0.08)">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label style="font-size:11px;display:block;margin-bottom:4px">Ticker</label><input id="opp-in-ticker" placeholder="AAPL" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;text-transform:uppercase;box-sizing:border-box"></div>
+        <div><label style="font-size:11px;display:block;margin-bottom:4px">Entry Date</label><input id="opp-in-date" type="date" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
+        <div><label style="font-size:11px;display:block;margin-bottom:4px">Entry Price</label><input id="opp-in-price" type="number" step="0.01" placeholder="0.00" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
+        <div><label style="font-size:11px;display:block;margin-bottom:4px">Amount Deployed $</label><input id="opp-in-deployed" type="number" max="500" placeholder="500" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
+      </div>
+      <div style="margin-top:10px">
+        <label style="font-size:11px;display:block;margin-bottom:4px">Notes</label>
+        <textarea id="opp-in-notes" rows="2" placeholder="Why are you taking this? What signal did you see?" style="width:100%;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;resize:vertical;box-sizing:border-box"></textarea>
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button onclick="oppAddPlay()" style="min-width:80px;padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;min-height:44px">Save play</button>
+        <span id="opp-add-err" style="font-size:12px"></span>
+      </div>
+    </div>
+
+    <!-- Part E: closed plays history -->
+    <details style="margin-top:1rem">
+      <summary style="font-size:12px;cursor:pointer;opacity:.7">Past plays ▾</summary>
+      <div id="opp-closed-list" style="margin-top:.6rem"></div>
+    </details>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     4 — EQUITY CURVE
+     ══════════════════════════════════════ -->
 
 <!-- TOTAL EQUITY vs S&P + WEEKLY GRADE CARD -->
 <div class="grid-equity" style="margin-bottom:1rem">
@@ -517,6 +606,14 @@ canvas{width:100%!important}
   <div style="display:flex;gap:14px;margin-top:6px;flex-wrap:wrap" id="trend-legend"></div>
 </div>
 
+<!-- ══════════════════════════════════════
+     5 — WEEKLY NOTES
+     (plus season-review content that was already
+     clustered with it — kept together, unchanged)
+     ══════════════════════════════════════ -->
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Weekly notes</div>
+
 <!-- WEEKLY NOTES CARD -->
 <div class="card" style="margin-bottom:1rem">
   <div class="card-hdr">
@@ -546,7 +643,6 @@ canvas{width:100%!important}
 
 <!-- WIN RATE BY SCORE RANGE -->
 <div class="card" style="margin-bottom:1rem"><div class="ctitle">Win rate by score range</div><div id="score-heat-map"><div style="font-size:13px">No data yet.</div></div></div>
-<div style="text-align:center;margin-bottom:1rem"><button id="backfill-pool-btn" onclick="backfillCandidatePool()" style="font-size:11px;opacity:.5;border:none;background:transparent;cursor:pointer;color:inherit">Backfill past weeks →</button></div>
 
 <!-- R DISTRIBUTION -->
 <div class="card" style="margin-bottom:1rem">
@@ -596,8 +692,8 @@ canvas{width:100%!important}
 </div>
 
 <!-- ══════════════════════════════════════
-     ZONE 3 — CONTEXT
-     Reference material, collapsible
+     6 — MARKET INTEL
+     Reference material, collapsible, moved to bottom
      ══════════════════════════════════════ -->
 
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Market context</div>
@@ -621,6 +717,12 @@ canvas{width:100%!important}
     <div id="edu-rules" style="display:none"></div>
   </div>
 </div>
+
+<!-- ══════════════════════════════════════
+     7 — CANDIDATE POOL BACKFILL (very bottom)
+     ══════════════════════════════════════ -->
+
+<div style="text-align:center;margin-bottom:1rem"><button id="backfill-pool-btn" onclick="backfillCandidatePool()" style="font-size:11px;opacity:.5;border:none;background:transparent;cursor:pointer;color:inherit">Backfill past weeks →</button></div>
 
 </div><!-- /main-stock -->
 
@@ -678,7 +780,6 @@ canvas{width:100%!important}
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;flex-wrap:wrap;gap:8px">
   <div>
     <span style="font-size:16px;font-weight:500">Crypto — Weekend System</span>
-    <span id="c-phase-badge" style="display:inline-block;font-size:11px;padding:2px 9px;border-radius:20px;font-weight:500;background:#2e1e00;color:#e5a020;border:.5px solid #e5a020;margin-left:8px">Phase 1</span>
   </div>
   <span id="c-week-label" style="font-size:12px"></span>
 </div>
@@ -693,7 +794,7 @@ canvas{width:100%!important}
 <!-- ── B: Secondary metrics ── -->
 <div class="grid-4" style="margin-bottom:.75rem">
   <div class="metric"><div class="lbl">Expectancy</div><div class="val" id="c-m-exp">—</div><div class="sub" id="c-m-exp-sub">after 32% tax: —</div></div>
-  <div class="metric"><div class="lbl">Weeks logged</div><div class="val" id="c-m-weeks">— / 8</div><div class="sub">min for phase 1</div>
+  <div class="metric"><div class="lbl">Weeks logged</div><div class="val" id="c-m-weeks">—</div><div class="sub">weeks tracked</div>
     <div style="height:4px;border-radius:3px;margin-top:6px;background:rgba(255,255,255,0.08)"><div id="c-weeks-bar" style="height:4px;border-radius:3px;width:0%;background:#e5a020;transition:width .4s"></div></div>
   </div>
   <div class="metric"><div class="lbl">Account equity</div><div class="val" id="c-m-equity">$500.00</div><div class="sub" id="c-m-equity-sub">starting $500</div>
@@ -702,8 +803,10 @@ canvas{width:100%!important}
   <div class="metric"><div class="lbl">Risk / trade</div><div class="val">5%</div><div class="sub" id="c-risk-dollars">$25.00 at risk each</div></div>
 </div>
 
-<!-- ── C: Phase gate banner ── -->
-<div id="c-gate-banner" style="padding:10px 14px;border-radius:8px;margin-bottom:.85rem;font-size:13px;display:flex;align-items:center;gap:10px;background:#2e1e00;border:.5px solid #e5a020;color:#e5a020">
+<!-- ── C: Phase gate banner — hidden per V2 cleanup. Element kept in the DOM
+     (renderCryptoMetrics() still writes to it unconditionally, no null-guard)
+     so existing crypto JS keeps working untouched. ── -->
+<div id="c-gate-banner" style="display:none">
   <span style="font-size:14px">⚠</span>
   <span id="c-gate-banner-text">Phase 1 — paper trading active · gates not yet cleared</span>
 </div>
@@ -861,24 +964,22 @@ canvas{width:100%!important}
 </div>
 
 
-<!-- ── J: Phase gates ── -->
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Phase gates</div>
+<!-- ── J: Parameters (phase-gate checklist removed; c-gates-detail element kept,
+     hidden, for the null-guarded renderCryptoGatesSection() JS call) ── -->
+<div id="c-gates-detail" style="display:none"></div>
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Parameters</div>
 <div class="card" style="margin-bottom:1rem">
-  <div class="ctitle">Phase 1 gates — all must pass before live capital</div>
-  <div id="c-gates-detail"></div>
-  <div style="margin-top:1rem;padding-top:.75rem;border-top:.5px solid rgba(255,255,255,0.08)">
-    <div class="ctitle">Locked parameters (Phase 1)</div>
-    <table class="c-params-tbl">
-      <tr><td style="opacity:.5;width:180px">Stop distance</td><td>1.25 × ATR14</td></tr>
-      <tr><td style="opacity:.5">R target</td><td>2.0R</td></tr>
-      <tr><td style="opacity:.5">Risk per trade</td><td>5% of equity</td></tr>
-      <tr><td style="opacity:.5">Max exposure</td><td>10% (both instruments)</td></tr>
-      <tr><td style="opacity:.5">Instruments</td><td>BTC-USD + ETH-USD only</td></tr>
-      <tr><td style="opacity:.5">Slippage</td><td>0.1% on entry</td></tr>
-      <tr><td style="opacity:.5">Tax rate</td><td>32% short-term cap gains</td></tr>
-      <tr><td style="opacity:.5">Hold period</td><td>Fri close → Sun close</td></tr>
-    </table>
-  </div>
+  <div class="ctitle">Locked parameters</div>
+  <table class="c-params-tbl">
+    <tr><td style="opacity:.5;width:180px">Stop distance</td><td>1.25 × ATR14</td></tr>
+    <tr><td style="opacity:.5">R target</td><td>2.0R</td></tr>
+    <tr><td style="opacity:.5">Risk per trade</td><td>5% of equity</td></tr>
+    <tr><td style="opacity:.5">Max exposure</td><td>10% (both instruments)</td></tr>
+    <tr><td style="opacity:.5">Instruments</td><td>BTC-USD + ETH-USD only</td></tr>
+    <tr><td style="opacity:.5">Slippage</td><td>0.1% on entry</td></tr>
+    <tr><td style="opacity:.5">Tax rate</td><td>32% short-term cap gains</td></tr>
+    <tr><td style="opacity:.5">Hold period</td><td>Fri close → Sun close</td></tr>
+  </table>
 </div>
 
 <!-- ── K: Backup ── -->
@@ -915,55 +1016,70 @@ canvas{width:100%!important}
      ════════════════════════════════════════════════════ -->
 <div id="main-howto" style="display:none">
 
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem;opacity:.5">📈 Stock model</div>
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:.75rem;opacity:.5">📈 Stock model — V2</div>
 
 <div class="card">
-  <div class="ctitle">Weekly schedule</div>
-  <div class="c-filter-row">
-    <span style="font-weight:500">Monday morning</span>
-    <span style="opacity:.6;font-size:11px">Run model, upload CSV to dashboard</span>
-  </div>
-  <div class="c-filter-row" style="border-bottom:none">
-    <span style="font-weight:500">Friday</span>
-    <span style="opacity:.6;font-size:11px">Log exits before weekend, review performance</span>
-  </div>
-</div>
-
-<div class="card">
-  <div class="ctitle">Terminal command</div>
-  <div style="position:relative;margin-bottom:.5rem">
-    <pre id="stock-cmd-1" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">cd ~/Library/Mobile\ Documents/com\~apple\~CloudDocs/Trading && python3 stock_model/main.py</pre>
+  <div class="ctitle">A — Running the model</div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Every Monday morning, from the Trading directory, run:</span></div>
+  <div style="position:relative;margin:.4rem 0 .85rem 34px">
+    <pre id="stock-cmd-1" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">python3 stock_model/main.py</pre>
     <button onclick="copyCmd('stock-cmd-1',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
   </div>
-  <div style="font-size:11px;opacity:.5">Paste this into Terminal. Candidates CSV saves automatically.</div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">The model scores all S&amp;P 500 stocks and applies 9 filters. Results save to <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Results/candidates/</code></span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Load the CSV via the "Load Monday slate" button</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">If the slate shows candidates: you have trades this week</span></div>
+  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px">5</span><span style="font-size:13px">If the overlay shows a sit-out reason: no trades — archive the week and check back next Monday</span></div>
 </div>
 
 <div class="card">
-  <div class="ctitle">Monday morning checklist</div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Run <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">main.py</code> from terminal (command above)</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Find the CSV in <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Trading/stock_model/Results/candidates/</code></span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Go to Stock tab → "Load Monday slate" → upload that CSV</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">At 9:15am: check the pre-market price for each candidate against the <strong>Max Entry</strong> column in the slate</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">5</span><span style="font-size:13px">At 9:30am: submit <strong>market orders</strong> for any candidate trading below its max entry price. Skip any candidate trading above max entry — do not chase it.</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">6</span><span style="font-size:13px">After each fill: immediately place a <strong>GTC stop-loss</strong> order in Fidelity at the CSV stop price. Do not move to the next trade until the stop is placed.</span></div>
-  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px">7</span><span style="font-size:13px">Record actual fill prices in the dashboard via the "Log a trade" form — use your real fill price, not the CSV entry price.</span></div>
+  <div class="ctitle">B — Reading the slate</div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Filter count badge</span><span style="font-size:12px">Shown per candidate, e.g. 8/9 or 9/9</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">7/9 – 8/9 filters</span><span style="font-size:12px">Normal sizing — $35 risk per trade</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">9/9 filters</span><span style="font-size:12px;color:#1fba85;font-weight:500">High conviction — $70 risk per trade</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Accel ✓</span><span style="font-size:12px">Accelerating momentum — additional conviction signal</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Entry window</span><span style="font-size:12px">Monday OR Tuesday only</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Wed / Thu entries</span><span style="font-size:12px">Skip — edge is weaker</span></div>
+  <div class="c-filter-row" style="border-bottom:none"><span style="opacity:.6;font-size:12px">Friday</span><span style="font-size:12px;color:#e55555">Never enter — it's exit day</span></div>
 </div>
 
 <div class="card">
-  <div class="ctitle">Fidelity execution — at open</div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">At 9:15am: check the pre-market price of each candidate in the slate. Compare against the <strong>Max Entry</strong> column. Any candidate already trading above its max entry is skipped — no exceptions.</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">At 9:30am: submit <strong>market orders</strong> for candidates trading below their max entry. Market orders fill at the open price — your fill will differ from the CSV entry price, which is Friday's close.</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">After each fill: immediately place a <strong>Sell → Stop Loss</strong> order at the CSV stop price. Set Time in Force to <strong>GTC (Good Till Cancelled)</strong>. Do not move to the next trade until the stop is placed.</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Record your actual fill price in the dashboard via the "Log a trade" form. Use the real fill, not the CSV entry price — this keeps your P&amp;L and stop distance accurate.</span></div>
-  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px;color:#e55555">⚠</span><span style="font-size:13px;color:#e55555">A position without a GTC stop loss is a rule violation. The stop order costs no additional capital — it just protects what you already own.</span></div>
+  <div class="ctitle">C — Entering trades (Monday 9:15–9:30am)</div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">At 9:15am: check pre-market price vs Entry Price in the slate</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">If pre-market price &gt; Entry Price: skip that candidate</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">At 9:30am: market order for candidates trading below entry price</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Immediately after fill: place a GTC stop-loss at Stop Price</span></div>
+  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px">5</span><span style="font-size:13px">Log the trade in the dashboard with your actual fill price</span></div>
 </div>
 
 <div class="card">
-  <div class="ctitle">Friday checklist</div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Check each open position — did target or stop trigger this week?</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Log exits for closed positions using the close button on each trade</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Archive the week via "Archive week" button before running next week's model</span></div>
-  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Click "Advance week" in the Monday model output section to archive the week and reset the live view</span></div>
+  <div class="ctitle">D — Managing the week</div>
+  <div class="c-filter-row"><span style="font-weight:500;font-size:12px">Tuesday – Thursday</span><span style="opacity:.6;font-size:11px">Check positions, no new entries</span></div>
+  <div class="c-filter-row"><span style="font-weight:500;font-size:12px">Stop triggers</span><span style="opacity:.6;font-size:11px">Loss is logged, move on</span></div>
+  <div class="c-filter-row"><span style="font-weight:500;font-size:12px">Target (2R) hits</span><span style="opacity:.6;font-size:11px">Take the win, close the position</span></div>
+  <div class="c-filter-row"><span style="font-weight:500;font-size:12px;color:#e55555">Friday before 3:30pm</span><span style="font-size:11px;color:#e55555">Exit ALL open positions — no exceptions</span></div>
+  <div class="c-filter-row" style="border-bottom:none"><span style="font-weight:500;font-size:12px">Every exit</span><span style="opacity:.6;font-size:11px">Log in dashboard</span></div>
+</div>
+
+<div class="card" style="border-left:3px solid #e5a020">
+  <div class="ctitle">E — Opportunistic plays (Bucket 2)</div>
+  <div style="font-size:12px;opacity:.6;margin-bottom:8px">Separate from the systematic model. Tracked independently — never mixed with systematic results.</div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Criteria</span><span style="font-size:12px;text-align:right">3W return ≥ 20%, accelerating, volume confirmed, not within 5% of 52W high, $ volume &gt; $100M/day</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Size</span><span style="font-size:12px">Fixed $300–500 deployed — not risk-based</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Max open</span><span style="font-size:12px">2 at any time</span></div>
+  <div class="c-filter-row" style="border-bottom:none"><span style="opacity:.6;font-size:12px">Exit</span><span style="font-size:12px">No mandatory Friday exit — hold until thesis breaks</span></div>
+</div>
+
+<div class="card">
+  <div class="ctitle">F — The 9 V2 filters</div>
+  <div class="c-gate-row"><span style="font-size:12px;min-width:28px;font-weight:500;opacity:.6">F1</span><span style="font-size:13px">3W return ≥ 10%</span></div>
+  <div class="c-gate-row"><span style="font-size:12px;min-width:28px;font-weight:500;opacity:.6">F2</span><span style="font-size:13px">Volume ≥ 1.0x 20-day average</span></div>
+  <div class="c-gate-row"><span style="font-size:12px;min-width:28px;font-weight:500;opacity:.6">F3</span><span style="font-size:13px">Score gap ≥ 0.01 (field has clear separation)</span></div>
+  <div class="c-gate-row"><span style="font-size:12px;min-width:28px;font-weight:500;opacity:.6">F4</span><span style="font-size:13px">First appearance (no repeat from prior week)</span></div>
+  <div class="c-gate-row"><span style="font-size:12px;min-width:28px;font-weight:500;opacity:.6">F5</span><span style="font-size:13px">Exclude Materials sector</span></div>
+  <div class="c-gate-row"><span style="font-size:12px;min-width:28px;font-weight:500;opacity:.6">F6</span><span style="font-size:13px">Price ≥ $20</span></div>
+  <div class="c-gate-row"><span style="font-size:12px;min-width:28px;font-weight:500;opacity:.6">F7</span><span style="font-size:13px">Sector ETF up ≥ 1% over 3 weeks</span></div>
+  <div class="c-gate-row"><span style="font-size:12px;min-width:28px;font-weight:500;opacity:.6">F8</span><span style="font-size:13px">Stock within 30% of 52-week high</span></div>
+  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:12px;min-width:28px;font-weight:500;opacity:.6">F9</span><span style="font-size:13px">No earnings in next 7–14 days</span></div>
 </div>
 
 <div class="card">
@@ -1061,20 +1177,18 @@ canvas{width:100%!important}
 </div>
 
 <div class="card">
-  <div class="ctitle">Phase 1 gates — all three must pass before real capital</div>
-  <div class="c-gate-row"><span style="font-size:18px;min-width:24px">①</span><span style="font-size:13px">8 weeks of paper trades logged</span></div>
-  <div class="c-gate-row"><span style="font-size:18px;min-width:24px">②</span><span style="font-size:13px">Live win rate above 50%</span></div>
-  <div class="c-gate-row"><span style="font-size:18px;min-width:24px">③</span><span style="font-size:13px">Positive after-tax expectancy at 32% tax rate</span></div>
+  <div class="ctitle">Crypto benchmarks</div>
+  <div class="c-gate-row"><span style="font-size:18px;min-width:24px">①</span><span style="font-size:13px">Live win rate above 50%</span></div>
+  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:18px;min-width:24px">②</span><span style="font-size:13px">Positive after-tax expectancy at 32% tax rate</span></div>
 </div>
 
 <div class="card">
-  <div class="ctitle">Locked parameters — Phase 1</div>
+  <div class="ctitle">Locked parameters</div>
   <table class="c-params-tbl">
     <tr><td style="opacity:.5;width:160px">Stop distance</td><td>1.25 × ATR14</td></tr>
     <tr><td style="opacity:.5">Target</td><td>2.0R</td></tr>
     <tr><td style="opacity:.5">Risk per trade</td><td>5% of equity ($25 at $500)</td></tr>
     <tr><td style="opacity:.5">Max exposure</td><td>10% ($50 if both signal)</td></tr>
-    <tr><td style="opacity:.5">Rule</td><td style="color:#e55555;font-size:12px">No parameter changes before 8 weeks are complete</td></tr>
   </table>
 </div>
 
@@ -1221,30 +1335,37 @@ async function loadAllData(){
     // stock_weeks notes take precedence over legacy notes collection
     swSnap.forEach(doc=>{if(doc.data().note)notesCache[doc.id]=doc.data().note;});
   }
-  // Real-time listeners — resolve once all four initial snapshots have fired
+  // Real-time listeners — resolve once all initial snapshots have fired
+  // (6 listeners: the original 5 + opportunisticPlays, added for the
+  // Opportunistic Plays / Bucket 2 feature — same read-alongside pattern
+  // as candidatePool, per CHANGE 3/4 of the V2 dashboard work.)
   return new Promise(resolve=>{
     let ready=0;
-    const onFirst=()=>{if(++ready===5)resolve();};
+    const onFirst=()=>{if(++ready===6)resolve();};
     _unsubs.push(
       userRef.collection('data').doc('trades').onSnapshot(snap=>{
         trades=snap.exists?(snap.data().items||[]):[];
-        ready<5?onFirst():render();
+        ready<6?onFirst():render();
       }),
       userRef.collection('data').doc('closed').onSnapshot(snap=>{
         closed=snap.exists?(snap.data().items||[]):[];
-        ready<5?onFirst():render();
+        ready<6?onFirst():render();
       }),
       userRef.collection('data').doc('weeks').onSnapshot(snap=>{
         weeks=snap.exists?(snap.data().items||[]):[];
-        ready<5?onFirst():render();
+        ready<6?onFirst():render();
       }),
       userRef.collection('data').doc('slates').onSnapshot(snap=>{
         if(snap.exists){const sd=snap.data();slatesStore={current:sd.current||null,archive:sd.archive||[]};}
-        ready<5?onFirst():(renderSlate(),renderSlateHistoryDropdown());
+        ready<6?onFirst():(renderSlate(),renderSlateHistoryDropdown());
       }),
       userRef.collection('data').doc('candidatePool').onSnapshot(snap=>{
         candidatePool=snap.exists?(snap.data().items||[]):[];
-        ready<5?onFirst():renderScoreHeatMap();
+        ready<6?onFirst():renderScoreHeatMap();
+      }),
+      userRef.collection('data').doc('opportunisticPlays').onSnapshot(snap=>{
+        opportunisticPlays=snap.exists?(snap.data().items||[]):[];
+        ready<6?onFirst():(renderOpportunisticPlays(),refreshOppPrices());
       })
     );
   });
@@ -1734,7 +1855,7 @@ const EDU={
     {type:'neutral',tag:'Rule 2',title:'No new entries midweek',body:'Tuesday through Thursday you are a manager, not a trader. Your only job is monitoring the three exit triggers: stop hit, target hit, or +3% for early-exit decision. Any urge to enter midweek is emotional.'},
     {type:'neutral',tag:'Rule 3',title:'Friday close is mandatory',body:'Every position closes by Friday. No carrying positions into the weekend. Forced weekly recycling keeps your capital moving and your feedback loop tight. No exceptions.'},
     {type:'warning',tag:'Rule 4',title:'No adding to losing positions',body:'If a trade is down and hasn\'t hit your stop, you do nothing. You do not average down. Adding to losers is how small losses become account-damaging losses. Your stop is your decision point.'},
-    {type:'neutral',tag:'Rule 5',title:'Risk $35 per trade, no more in Phase 1',body:'Phase 1 risk is $25–35 per trade. Generate a sample where the emotional stakes are low enough that you execute the rules cleanly. You cannot validate a system you\'re too scared to follow.'},
+    {type:'neutral',tag:'Rule 5',title:'Risk $35 normal, $70 on 9/9 filters',body:'Standard risk is $35 per trade. A candidate that clears all 9 V2 filters sizes up to $70. Keep the emotional stakes low enough that you execute the rules cleanly — you cannot validate a system you\'re too scared to follow.'},
     {type:'warning',tag:'Rule 6',title:'No system changes before 50 trades',body:'Every system goes through rough patches. If you change parameters after 5 losing trades, you will never know if the original system had edge. Hold the line for 50 trades minimum.'}
   ]
 };
@@ -2283,6 +2404,15 @@ function renderNotesCard(){
     html+=`<span onclick="stockToggleNote(${w.week})" style="font-size:11px;color:${T.textMuted};cursor:pointer;padding:2px 5px;user-select:none">${isOpen?'▲':'▼'}</span>`;
     html+=`</div>`;
 
+    // Opportunistic (Bucket 2) P&L for this week — always separate from,
+    // never added into, the systematic P&L shown above.
+    {
+      const oppPnl = oppPnlForWeek(w.week);
+      const oppColor = oppPnl===null ? T.textMuted : (oppPnl>=0 ? T.win : T.loss);
+      const oppText = oppPnl===null ? '—' : fmtP(oppPnl);
+      html+=`<div style="font-size:11px;color:${T.textMuted};padding:0 0 6px 68px">Opportunistic: <span style="color:${oppColor};font-weight:500">${oppText}</span></div>`;
+    }
+
     // ── Expanded panel ──
     if(isOpen){
       if(isEditing){
@@ -2701,11 +2831,11 @@ function render(){
   wrEl.style.color=tot?(wins/tot>=0.5?T.win:T.loss):T.textPrimary;
   document.getElementById('m-wl').textContent=wins+'W / '+losses+'L';
 
-  // season
-  const mktWins=weeks.filter(w=>w.pnl>0).length;
+  // active weeks (weeks with at least one trade logged) — was "Season record" (win-loss)
+  const activeWeeks=weeks.filter(w=>w.trades>0).length;
   const mktEl=document.getElementById('m-mkt');
-  mktEl.textContent=weeks.length?mktWins+'-'+(weeks.length-mktWins):'—';
-  mktEl.style.color=weeks.length?(mktWins>weeks.length-mktWins?T.win:T.loss):T.textPrimary;
+  mktEl.textContent=weeks.length?String(activeWeeks):'—';
+  mktEl.style.color=T.textPrimary;
   document.getElementById('m-mkt-sub').textContent=weeks.length+' week'+(weeks.length!==1?'s':'')+' tracked';
 
   // streak
@@ -2844,7 +2974,7 @@ function render(){
     }).join('')+`<div style="display:flex;justify-content:space-between;align-items:center;margin-top:12px;font-size:12px;color:${T.textMuted}"><button onclick="prevHistoryPage()" ${currentPage===0?'disabled':''} style="font-size:12px;padding:4px 10px;border-radius:8px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${T.textPrimary};cursor:${currentPage===0?'default':'pointer'};opacity:${currentPage===0?'.45':'1'}">&lt;&lt; Prev</button><div>Page ${currentPage+1} / ${totalPages}</div><button onclick="nextHistoryPage()" ${currentPage>=totalPages-1?'disabled':''} style="font-size:12px;padding:4px 10px;border-radius:8px;border:.5px solid ${T.btnBorder};background:${T.btnBg};color:${T.textPrimary};cursor:${currentPage>=totalPages-1?'default':'pointer'};opacity:${currentPage>=totalPages-1?'.45':'1'}">Next &gt;&gt;</button></div><div style="margin-top:8px;font-size:12px;color:${T.textMuted}">Showing ${showingStart}–${showingEnd} of ${totalRows} trades</div>`;
   }
 
-  buildEquityChart();buildWeekChart();renderHeatMap();renderScoreHeatMap();renderHOF();renderSectors();renderSeason();renderNotesCard();renderEdu();renderTrends();buildVarianceChart();buildRDistChart();
+  buildEquityChart();buildWeekChart();renderHeatMap();renderScoreHeatMap();renderHOF();renderSectors();renderSeason();renderNotesCard();renderEdu();renderTrends();buildVarianceChart();buildRDistChart();renderOpportunisticPlays();
 }
 
 /* ── delete trades ── */
@@ -3166,8 +3296,13 @@ function renderSlate(){
   const regime = (rows[0]['Regime'] || '').trim() || 'UNKNOWN';
   const date = slateData.date;
 
+  // Score gap (V2): same value repeated on every row of the CSV
+  const gapRaw = rows[0]['Score Gap'];
+  const gapNum = gapRaw !== undefined && gapRaw !== '' ? parseFloat(gapRaw) : NaN;
+  const gapSuffix = !isNaN(gapNum) ? '  ·  Score gap: ' + gapNum.toFixed(3) : '';
+
   fileLabel.textContent = date
-    ? 'Loaded: candidates_' + date + '.csv  ·  ' + rows.length + ' candidates'
+    ? 'Loaded: candidates_' + date + '.csv' + gapSuffix + '  ·  ' + rows.length + ' candidates'
     : slateData.filename;
 
   regimeTag.style.display = 'inline-block';
@@ -3182,13 +3317,47 @@ function renderSlate(){
   outputEl.innerHTML = buildSlateTable(rows, true, T);
 }
 
+let _slateDetailSeq = 0;
+function toggleSlateDetail(id){
+  const el = document.getElementById(id);
+  if(el) el.classList.toggle('open');
+}
+
+function buildFilterDetailSection(rows, T){
+  if(!rows.length) return '';
+  const sampleKeys = Object.keys(rows[0]);
+  const flagPattern = /^f[_\s-]?(vol|gap|fresh|sector|price|etf|52w|earn|accel)$/i;
+  const flagKeys = sampleKeys.filter(k => flagPattern.test(k.trim()));
+  const rawKey = sampleKeys.find(k => /^filter[_\s-]?(detail|breakdown)$/i.test(k.trim()));
+  if(!flagKeys.length && !rawKey) return ''; // CSV doesn't carry per-filter data — skip gracefully
+
+  const lines = rows.map(r => {
+    if(rawKey && r[rawKey]) return escHtml(r['Ticker']) + ': ' + escHtml(r[rawKey]);
+    const parts = flagKeys.map(k => {
+      const label = k.replace(/^f[_\s-]?/i,'').toLowerCase();
+      const truthy = /^(true|1|yes|✓)$/i.test(String(r[k]||'').trim());
+      return label + (truthy ? '✓' : '✗');
+    }).join(' ');
+    const fp = r['Filters Passed'] !== undefined && r['Filters Passed'] !== '' ? ' (' + r['Filters Passed'] + '/9)' : '';
+    return escHtml(r['Ticker']) + ': ' + parts + fp;
+  });
+
+  return '<details style="margin-top:.6rem">'
+    + '<summary style="font-size:11px;cursor:pointer;color:' + T.textMuted + '">Filter detail ▾</summary>'
+    + '<div style="font-size:11px;color:' + T.textMuted + ';line-height:1.9;margin-top:6px;font-family:\'SF Mono\',Menlo,monospace;white-space:pre-wrap">'
+    + lines.join('<br>')
+    + '</div></details>';
+}
+
 function buildSlateTable(rows, showLogBtn, T){
+  const cols = ['Rank','Ticker','Sector','Score','Entry','Stop','Target','Shares','Filters','Sizing','Accel'];
+  if(showLogBtn) cols.push('Action');
+  const mobileHidden = new Set(['Sector','Score','Entry','Stop','Target','Shares']);
+
   let html = '<div style="overflow-x:auto;margin-top:.5rem">'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr style="border-bottom:.5px solid ' + T.cardBorder + '">'
-    + ['Rank','Ticker','Sector','Score','Entry','Max entry','Stop','Target','Shares','Capital','Risk','1W Ret','RSI', showLogBtn ? 'Action' : '']
-        .filter(Boolean)
-        .map(h => '<th style="text-align:' + (h==='Ticker'||h==='Sector'||h==='Action'?'left':'right') + ';padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:' + T.textMuted + ';font-weight:500">' + h + '</th>')
+    + cols.map(h => '<th class="' + (mobileHidden.has(h)?'slate-hide-mobile':'') + '" style="text-align:' + (h==='Ticker'||h==='Sector'||h==='Action'?'left':'right') + ';padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:' + T.textMuted + ';font-weight:500">' + h + '</th>')
         .join('')
     + '</tr></thead><tbody>';
 
@@ -3211,45 +3380,72 @@ function buildSlateTable(rows, showLogBtn, T){
     const sectorLabel = SECTOR_COLORS[sector] ? sector : 'Other';
     const sectorColor = SECTOR_COLORS[sectorLabel] || T.textMuted;
     const rowBg  = idx % 2 === 0 ? T.cardBg : T.metricBg;
-    const ret1wColor = ret1w >= 0 ? T.win : T.loss;
-    const rsiColor   = rsi > 65 ? T.neutral : T.textPrimary;
-    const scoreBar   = Math.round(score * 100);
-    const scoreColor = score >= 0.90 ? T.win : score >= 0.80 ? T.neutral : T.textMuted;
     totalCapital += capital;
     const rank = parseInt(r['Rank']) || (idx + 1);
 
+    // V2: filters / sizing / accel
+    const filtersRaw = r['Filters Passed'];
+    const filtersPassed = filtersRaw !== undefined && filtersRaw !== '' ? parseInt(filtersRaw) : NaN;
+    let filtersBadge;
+    if(isNaN(filtersPassed)){
+      filtersBadge = '<span class="slate-badge" style="background:' + T.progressTrack + ';color:' + T.textMuted + '">—</span>';
+    } else {
+      const fBg = filtersPassed>=9 ? '#E1F5EE' : filtersPassed===8 ? '#FAEEDA' : T.progressTrack;
+      const fFg = filtersPassed>=9 ? '#085041' : filtersPassed===8 ? '#854F0B' : T.textMuted;
+      filtersBadge = '<span class="slate-badge" style="background:' + fBg + ';color:' + fFg + '">' + filtersPassed + '/9</span>';
+    }
+    let sizingHtml;
+    if(isNaN(filtersPassed)){
+      sizingHtml = '<span style="color:' + T.textMuted + '">—</span>';
+    } else if(filtersPassed >= 8){
+      sizingHtml = '<span style="color:' + T.win + ';font-weight:500"><span class="slate-sizing-full">2x · $70</span><span class="slate-sizing-abbrev">$70</span></span>';
+    } else {
+      sizingHtml = '<span style="color:' + T.textMuted + '"><span class="slate-sizing-full">1x · $35</span><span class="slate-sizing-abbrev">$35</span></span>';
+    }
+    const accel = /^(true|1|yes)$/i.test(String(r['Accel']||'').trim());
+    const accelHtml = accel ? '<span style="color:' + T.win + ';font-weight:600">✓</span>' : '';
+
+    const detailId = 'slate-detail-' + (_slateDetailSeq++);
+
     html += '<tr style="background:' + rowBg + ';border-bottom:.5px solid ' + T.cardBorder + '">'
-      + '<td style="padding:8px 8px;text-align:right;color:' + T.textMuted + '">#' + rank + '</td>'
+      + '<td style="padding:8px 8px;text-align:right;color:' + T.textMuted + '">#' + rank + '<button class="slate-toggle" onclick="toggleSlateDetail(\'' + detailId + '\')" title="Show full details">▾</button></td>'
       + '<td style="padding:8px 8px"><div style="font-weight:500;font-size:13px;color:' + T.textPrimary + '">' + ticker + '</div>' + (company ? '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:1px;line-height:1.3">' + company + '</div>' : '') + '</td>'
-      + '<td style="padding:8px 8px"><span style="font-size:10px;padding:2px 7px;border-radius:4px;background:' + sectorColor + '22;color:' + sectorColor + ';font-weight:500;white-space:nowrap">' + sectorLabel + '</span></td>'
-      + '<td style="padding:8px 8px;text-align:right"><div style="display:flex;align-items:center;justify-content:flex-end;gap:6px"><div style="width:40px;height:4px;background:' + T.progressTrack + ';border-radius:2px;overflow:hidden"><div style="width:' + scoreBar + '%;height:4px;background:' + scoreColor + ';border-radius:2px"></div></div><span style="color:' + scoreColor + ';font-weight:500">' + score.toFixed(2) + '</span></div></td>'
-      + '<td style="padding:8px 8px;text-align:right;color:' + T.textPrimary + '">$' + entry.toFixed(2) + '</td>'
-      + '<td style="padding:8px 8px;text-align:right;background:rgba(201,138,4,0.08);color:#c8890a;font-weight:500">$' + maxEntry.toFixed(2) + '</td>'
-      + '<td style="padding:8px 8px;text-align:right;color:' + T.loss + '">$' + stop.toFixed(2) + '</td>'
-      + '<td style="padding:8px 8px;text-align:right;color:' + T.win + '">$' + tgt.toFixed(2) + '</td>'
-      + '<td style="padding:8px 8px;text-align:right;color:' + T.textMuted + '">' + shares + '</td>'
-      + '<td style="padding:8px 8px;text-align:right;color:' + T.textPrimary + '">$' + capital + '</td>'
-      + '<td style="padding:8px 8px;text-align:right;color:' + T.neutral + '">$' + risk + '</td>'
-      + '<td style="padding:8px 8px;text-align:right;color:' + ret1wColor + '">' + (ret1w>=0?'+':'') + (ret1w*100).toFixed(1) + '%</td>'
-      + '<td style="padding:8px 8px;text-align:right;color:' + rsiColor + '">' + rsi.toFixed(0) + '</td>'
+      + '<td class="slate-hide-mobile" style="padding:8px 8px"><span style="font-size:10px;padding:2px 7px;border-radius:4px;background:' + sectorColor + '22;color:' + sectorColor + ';font-weight:500;white-space:nowrap">' + sectorLabel + '</span></td>'
+      + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.textPrimary + '">' + score.toFixed(2) + '</td>'
+      + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.textPrimary + '">$' + entry.toFixed(2) + '</td>'
+      + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.loss + '">$' + stop.toFixed(2) + '</td>'
+      + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.win + '">$' + tgt.toFixed(2) + '</td>'
+      + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.textMuted + '">' + shares + '</td>'
+      + '<td style="padding:8px 8px;text-align:right">' + filtersBadge + '</td>'
+      + '<td style="padding:8px 8px;text-align:right">' + sizingHtml + '</td>'
+      + '<td style="padding:8px 8px;text-align:center">' + accelHtml + '</td>'
       + (showLogBtn
           ? '<td style="padding:8px 8px"><button onclick="prefillTrade(\'' + ticker + '\',' + entry + ',' + stop + ',' + tgt + ',' + shares + ',\'' + sector + '\',\'' + company.replace(/'/g,"\\'") + '\')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">→ log</button></td>'
           : '')
-      + '</tr>';
+      + '</tr>'
+      // Tap-to-expand detail row — holds the columns that never show inline
+      // (Max entry, Capital, Risk, 1W Ret, RSI) plus a mobile-only copy of
+      // Sector/Score/Entry/Stop/Target/Shares (hidden from the main row on mobile).
+      + '<tr id="' + detailId + '" class="slate-detail-row">'
+      + '<td colspan="' + cols.length + '" style="padding:6px 8px 10px;background:' + rowBg + ';font-size:11px;color:' + T.textMuted + '">'
+      + '<div style="display:flex;flex-wrap:wrap;gap:4px 16px">'
+      + '<span>Sector: <b style="color:' + T.textPrimary + '">' + sectorLabel + '</b></span>'
+      + '<span>Score: <b style="color:' + T.textPrimary + '">' + score.toFixed(2) + '</b></span>'
+      + '<span>Entry: <b style="color:' + T.textPrimary + '">$' + entry.toFixed(2) + '</b></span>'
+      + '<span>Stop: <b style="color:' + T.loss + '">$' + stop.toFixed(2) + '</b></span>'
+      + '<span>Target: <b style="color:' + T.win + '">$' + tgt.toFixed(2) + '</b></span>'
+      + '<span>Shares: <b style="color:' + T.textPrimary + '">' + shares + '</b></span>'
+      + '<span>Max entry: <b style="color:#c8890a">$' + maxEntry.toFixed(2) + '</b></span>'
+      + '<span>Capital: <b style="color:' + T.textPrimary + '">$' + capital + '</b></span>'
+      + '<span>Risk: <b style="color:' + T.neutral + '">$' + risk + '</b></span>'
+      + '<span>1W Ret: <b style="color:' + (ret1w>=0?T.win:T.loss) + '">' + (ret1w>=0?'+':'') + (ret1w*100).toFixed(1) + '%</b></span>'
+      + '<span>RSI: <b style="color:' + T.textPrimary + '">' + rsi.toFixed(0) + '</b></span>'
+      + '</div></td></tr>';
   });
 
-  // Total row — spans to Capital column, leaves Max entry blank
-  const totalCols = showLogBtn ? 14 : 13;
-  html += '<tr style="border-top:.5px solid ' + T.cardBorder + '">'
-    + '<td colspan="9" style="padding:8px 8px;text-align:right;font-size:11px;color:' + T.textMuted + ';font-style:italic">Total deployed</td>'
-    + '<td style="padding:8px 8px;text-align:right;font-weight:600;color:' + T.textPrimary + '">$' + totalCapital.toLocaleString() + '</td>'
-    + '<td colspan="' + (totalCols - 10) + '"></td>'
-    + '</tr>';
-
   html += '</tbody></table></div>';
-  if(showLogBtn){
-    html += '<div style="font-size:11px;color:' + T.textMuted + ';margin-top:8px;font-style:italic">Click → log to pre-fill the Add Trade form. Confirm your actual fill price before submitting.</div>';
-  }
+  html += '<div style="font-size:11px;color:' + T.textMuted + ';margin-top:8px;font-style:italic">Total deployed: $' + totalCapital.toLocaleString() + (showLogBtn ? ' · Click → log to pre-fill the Add Trade form. Confirm your actual fill price before submitting.' : '') + '</div>';
+  html += buildFilterDetailSection(rows, T);
   return html;
 }
 
@@ -3361,6 +3557,200 @@ function prefillTrade(ticker, entry, stop, target, shares, sector, company){
   // scroll to add trade form
   document.getElementById('in-t').scrollIntoView({ behavior:'smooth', block:'center' });
   document.getElementById('in-t').focus();
+}
+
+// ══════════════════════════════════════════════════════════════════
+//  OPPORTUNISTIC PLAYS (Bucket 2) — separate from the systematic model.
+//  Firestore: users/{uid}/data/opportunisticPlays  { items: [...] }
+//  Never mixed into systematic P&L / performance metrics.
+// ══════════════════════════════════════════════════════════════════
+let opportunisticPlays = [];
+let oppPrices = {};
+let oppSectionOpen = !(window.matchMedia && window.matchMedia('(max-width:640px)').matches);
+
+function saveOpportunisticPlays(){
+  if(!userRef) return;
+  dbWrite(userRef.collection('data').doc('opportunisticPlays').set({items: opportunisticPlays}));
+}
+
+function oppToggleSection(){
+  oppSectionOpen = !oppSectionOpen;
+  const body = document.getElementById('opp-body');
+  const btn = document.getElementById('opp-toggle');
+  if(body) body.style.display = oppSectionOpen ? 'block' : 'none';
+  if(btn) btn.textContent = oppSectionOpen ? 'hide ▲' : 'show ▼';
+}
+function oppInitSection(){
+  const body = document.getElementById('opp-body');
+  const btn = document.getElementById('opp-toggle');
+  if(body) body.style.display = oppSectionOpen ? 'block' : 'none';
+  if(btn) btn.textContent = oppSectionOpen ? 'hide ▲' : 'show ▼';
+}
+
+async function refreshOppPrices(){
+  const open = opportunisticPlays.filter(p => p.status === 'open');
+  if(!open.length) return;
+  const tickers = [...new Set(open.map(p => p.ticker))];
+  await Promise.all(tickers.map(async tk => {
+    const p = await fetchPrice(tk); // reuse the existing multi-fallback price fetcher — do not duplicate
+    if(p != null) oppPrices[tk] = p;
+  }));
+  renderOpportunisticPlays();
+}
+
+function oppToggleLogForm(){
+  const el = document.getElementById('opp-log-form');
+  if(!el) return;
+  const willShow = el.style.display === 'none';
+  el.style.display = willShow ? 'block' : 'none';
+  if(willShow){
+    const dEl = document.getElementById('opp-in-date');
+    if(dEl && !dEl.value) dEl.value = new Date().toISOString().slice(0,10);
+  }
+}
+
+async function oppAddPlay(){
+  const T = THEME;
+  const errEl = document.getElementById('opp-add-err');
+  if(errEl) errEl.textContent = '';
+  const ticker = (document.getElementById('opp-in-ticker').value || '').trim().toUpperCase();
+  const entryDate = document.getElementById('opp-in-date').value || new Date().toISOString().slice(0,10);
+  const entryPrice = parseFloat(document.getElementById('opp-in-price').value);
+  const deployed = parseFloat(document.getElementById('opp-in-deployed').value);
+  const notes = (document.getElementById('opp-in-notes').value || '').trim();
+
+  if(!ticker){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Ticker is required.';} return; }
+  if(isNaN(entryPrice) || entryPrice <= 0){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Entry price must be > 0.';} return; }
+  if(isNaN(deployed) || deployed <= 0){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Amount deployed must be > 0.';} return; }
+
+  const play = {
+    id: Date.now().toString(),
+    ticker, entryDate, entryPrice, deployed, notes,
+    status: 'open',
+    exitDate: null, exitPrice: null, realizedPnl: null,
+  };
+  opportunisticPlays.push(play);
+  saveOpportunisticPlays();
+  ['opp-in-ticker','opp-in-price','opp-in-deployed','opp-in-notes'].forEach(id => {
+    const e = document.getElementById(id); if(e) e.value = '';
+  });
+  const formEl = document.getElementById('opp-log-form');
+  if(formEl) formEl.style.display = 'none';
+  renderOpportunisticPlays();
+  refreshOppPrices();
+}
+
+function oppShowCloseForm(id){
+  const T = THEME;
+  const el = document.getElementById('opp-close-form-' + id);
+  if(!el) return;
+  const today = new Date().toISOString().slice(0,10);
+  el.innerHTML = '<div style="margin-top:8px;padding-top:8px;border-top:.5px solid rgba(255,255,255,0.1);display:grid;grid-template-columns:1fr 1fr;gap:8px">'
+    + '<div><label style="font-size:11px;display:block;margin-bottom:4px">Exit Price</label><input id="opp-close-price-' + id + '" type="number" step="0.01" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>'
+    + '<div><label style="font-size:11px;display:block;margin-bottom:4px">Exit Date</label><input id="opp-close-date-' + id + '" type="date" value="' + today + '" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>'
+    + '<div style="grid-column:1/-1;display:flex;gap:8px">'
+    + '<button onclick="oppClosePlay(\'' + id + '\')" style="min-width:80px;padding:8px 16px;font-size:13px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:' + T.win + ';cursor:pointer;font-weight:500;min-height:44px">Save</button>'
+    + '<button onclick="renderOpportunisticPlays()" style="min-width:80px;padding:8px 16px;font-size:13px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#888;cursor:pointer;min-height:44px">Cancel</button>'
+    + '</div></div>';
+}
+
+function oppClosePlay(id){
+  const priceInput = document.getElementById('opp-close-price-' + id);
+  const dateInput = document.getElementById('opp-close-date-' + id);
+  if(!priceInput || !dateInput) return;
+  const exitPrice = parseFloat(priceInput.value);
+  const exitDate = dateInput.value;
+  if(isNaN(exitPrice) || exitPrice <= 0){ priceInput.style.borderColor = '#e55555'; priceInput.focus(); return; }
+  if(!exitDate) return;
+  const play = opportunisticPlays.find(p => p.id === id);
+  if(!play) return;
+  const realizedPnl = ((exitPrice - play.entryPrice) / play.entryPrice) * play.deployed;
+  play.status = 'closed';
+  play.exitDate = exitDate;
+  play.exitPrice = exitPrice;
+  play.realizedPnl = parseFloat(realizedPnl.toFixed(2));
+  saveOpportunisticPlays();
+  renderOpportunisticPlays();
+}
+
+function renderOppOpenList(){
+  const T = THEME;
+  const el = document.getElementById('opp-open-list');
+  if(!el) return;
+  const open = opportunisticPlays.filter(p => p.status === 'open');
+  if(!open.length){ el.innerHTML = '<div style="font-size:13px;opacity:.5">No open plays</div>'; return; }
+  el.innerHTML = open.map(p => {
+    const priceAvailable = oppPrices[p.ticker] != null;
+    const cur = priceAvailable ? oppPrices[p.ticker] : p.entryPrice;
+    const pct = p.entryPrice > 0 ? (cur - p.entryPrice) / p.entryPrice : 0;
+    const pnl = pct * p.deployed;
+    const pnlColor = pnl >= 0 ? T.win : T.loss;
+    const notes = (p.notes || '').trim();
+    const notesShort = notes.length > 70 ? notes.slice(0,70) + '…' : notes;
+    return '<div class="slate-card" style="margin-bottom:.5rem">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px">'
+      + '<span class="tkr">' + escHtml(p.ticker) + '</span>'
+      + '<button onclick="oppShowCloseForm(\'' + p.id + '\')" style="min-width:80px;font-size:11px;padding:6px 12px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.btnBg + ';color:' + T.textPrimary + ';cursor:pointer;min-height:36px">Close ✓</button>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;font-size:12px;color:' + T.textMuted + ';margin-bottom:3px;flex-wrap:wrap;gap:4px">'
+      + '<span>Entry ' + escHtml(p.entryDate) + ' · $' + p.entryPrice.toFixed(2) + '</span>'
+      + '<span style="opacity:' + (priceAvailable?1:.6) + '">' + (priceAvailable ? ('Live $' + cur.toFixed(2)) : 'price unavailable') + '</span>'
+      + '</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:3px">'
+      + '<span style="color:' + T.textMuted + '">$' + p.deployed.toFixed(0) + ' deployed</span>'
+      + '<span style="color:' + pnlColor + ';font-weight:500">' + fmtP(pnl) + ' (' + (pct*100>=0?'+':'') + (pct*100).toFixed(1) + '%)</span>'
+      + '</div>'
+      + (notesShort ? '<div style="font-size:11px;color:' + T.textMuted + ';font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(notesShort) + '</div>' : '')
+      + '<div id="opp-close-form-' + p.id + '"></div>'
+      + '</div>';
+  }).join('');
+}
+
+function renderOppClosedList(){
+  const T = THEME;
+  const el = document.getElementById('opp-closed-list');
+  if(!el) return;
+  const closed = opportunisticPlays.filter(p => p.status === 'closed')
+    .sort((a,b) => new Date(b.exitDate||0) - new Date(a.exitDate||0));
+  if(!closed.length){ el.innerHTML = '<div style="font-size:13px;color:' + T.textMuted + '">No closed plays yet.</div>'; return; }
+  el.innerHTML = closed.map(p => {
+    const pnlColor = (p.realizedPnl||0) >= 0 ? T.win : T.loss;
+    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:.5px solid ' + T.cardBorder + ';font-size:12px;gap:8px">'
+      + '<div style="flex:1;min-width:0">'
+      + '<div style="font-weight:500;color:' + T.textPrimary + '">' + escHtml(p.ticker) + ' <span style="font-weight:400;color:' + T.textMuted + ';font-size:11px">' + escHtml(p.entryDate||'') + ' → ' + escHtml(p.exitDate||'') + '</span></div>'
+      + (p.notes ? '<div style="font-size:11px;color:' + T.textMuted + ';font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(p.notes) + '</div>' : '')
+      + '</div>'
+      + '<span style="color:' + pnlColor + ';font-weight:500;flex-shrink:0">' + fmtP(p.realizedPnl||0) + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+function renderOpportunisticPlays(){
+  renderOppOpenList();
+  renderOppClosedList();
+}
+
+// ── week date-range helper, used only for the Weekly Notes opportunistic-P&L line ──
+function oppWeekDateRange(weekNumber){
+  const arc = (slatesStore.archive||[]).find(a => a.week === weekNumber);
+  const dateStr = arc && arc.date ? arc.date
+    : (weekNumber === weekNum && slatesStore.current && slatesStore.current.date ? slatesStore.current.date : null);
+  if(!dateStr) return null;
+  const start = new Date(dateStr + 'T00:00:00');
+  const end = new Date(start);
+  end.setDate(end.getDate() + 7);
+  return { start, end };
+}
+function oppPnlForWeek(weekNumber){
+  const range = oppWeekDateRange(weekNumber);
+  if(!range) return null;
+  const matches = opportunisticPlays.filter(p => {
+    if(p.status !== 'closed' || !p.exitDate) return false;
+    const d = new Date(p.exitDate + 'T00:00:00');
+    return d >= range.start && d < range.end;
+  });
+  if(!matches.length) return null;
+  return matches.reduce((s,p) => s + (p.realizedPnl||0), 0);
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -3922,7 +4312,7 @@ function renderCryptoMetrics(closed, open, T) {
     ? 'after 32% tax: ' + cFmtR(expTax) : 'after 32% tax: —';
 
   const wkCount = cryptoWeeks.length;
-  document.getElementById('c-m-weeks').textContent = wkCount + ' / ' + C_WEEKS_REQ;
+  document.getElementById('c-m-weeks').textContent = String(wkCount);
   const weeksPct = Math.min(100, wkCount / C_WEEKS_REQ * 100);
   const weeksBar = document.getElementById('c-weeks-bar');
   weeksBar.style.width = weeksPct + '%';
@@ -4825,6 +5215,27 @@ cToggleTradeFields();
 
 // END CRYPTO TAB
 
+/* ── slim status bar: "Week N · Regime: X · Date" ──
+   NEW, self-contained, additive code — does not modify render(), updateLiveDisplay(),
+   or archiveCurrentSlate(). It only reads the existing global weekNum/regime variables
+   and observes the (now-hidden) #regime-badge element, which those three functions
+   already update on every re-render, so this stays in sync without touching them. */
+(function(){
+  const todayStr = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  function updateStatusBar(){
+    const el = document.getElementById('week-status-bar');
+    if(!el) return;
+    el.textContent = 'Week ' + weekNum + ' · Regime: ' + regime + ' · ' + todayStr;
+  }
+  const badge = document.getElementById('regime-badge');
+  if(badge && window.MutationObserver){
+    new MutationObserver(updateStatusBar).observe(badge, {childList:true, characterData:true, subtree:true});
+  }
+  updateStatusBar();
+  // catch the first real data load, which happens asynchronously after auth
+  setTimeout(updateStatusBar, 1500);
+})();
+
 /* ── boot (triggered by Firebase auth) ── */
 window.addEventListener('online',()=>{const b=document.getElementById('offline-banner');if(b)b.style.display='none';});
 window.addEventListener('offline',()=>{const b=document.getElementById('offline-banner');if(b)b.style.display='flex';});
@@ -4852,13 +5263,16 @@ async function bootUser(user){
   if(ld)ld.style.display='none';
   applyTheme();
   initIntel();
+  oppInitSection();
   renderSlate();
   renderSlateHistoryDropdown();
   render();
   refreshPrices();
   fetchSpyHistory();
+  refreshOppPrices();
   setInterval(()=>refreshPrices(false),30000);
   setInterval(fetchSpyHistory,3600000);
+  setInterval(refreshOppPrices,30000);
   console.log('[AUTH] boot complete');
 }
 
