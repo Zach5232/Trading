@@ -1080,6 +1080,45 @@ canvas{width:100%!important}
 </div>
 
 <div class="card">
+  <div class="ctitle">G — Closing the week (Friday after 4pm)</div>
+
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">First time only: run the setup script from the Trading directory. Follow the prompts to enter your Firebase UID — you only need to do this once.</span></div>
+  <div style="position:relative;margin:.4rem 0 .85rem 34px">
+    <pre id="stock-cmd-setup" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">python3 stock_model/setup_firebase.py</pre>
+    <button onclick="copyCmd('stock-cmd-setup',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
+  </div>
+
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">Every Friday after 4pm ET: run the close script.</span></div>
+  <div style="position:relative;margin:.4rem 0 .5rem 34px">
+    <pre id="stock-cmd-close" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">python3 stock_model/friday_close.py</pre>
+    <button onclick="copyCmd('stock-cmd-close',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
+  </div>
+  <div style="font-size:11px;opacity:.5;margin:0 0 .85rem 34px;line-height:1.6">This automatically:<br>• Pulls Friday closing prices for all candidates<br>• Checks if any target (2R) was hit intraweek<br>• Calculates R-multiples<br>• Updates the candidate pool in the dashboard<br>• No manual editing required</div>
+
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Review the output. The script prints a summary table, e.g:</span></div>
+  <div style="margin:.4rem 0 .85rem 34px">
+    <pre style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:11px;font-family:'SF Mono',Menlo,monospace;color:rgba(255,255,255,0.65);overflow-x:auto;white-space:pre;margin:0">=== FRIDAY CLOSE — Week of 2026-08-18 ===
+Ticker  Entry    Stop     Target   Exit     R        Outcome
+--------------------------------------------------------------
+TER     404.29   382.07   448.73   375.74   -1.28R   Loss
+TRGP    297.77   290.96   311.38   299.10   +0.20R   Win
+
+=== SUMMARY ===
+Wins: 1 | Losses: 1 | Avg R: -0.54R
+Firestore updated: 2 records written</pre>
+  </div>
+
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Log systematic trade exits in the dashboard. If you actually traded (not paper): open the dashboard, find your open positions, and log each exit with your actual fill price. The close script updates the candidate pool (paper tracking) — your live trade log still needs your real Fidelity fill prices.</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">5</span><span style="font-size:13px">Archive the week — click "Archive week" in Monday Model Output, then add your weekly note.</span></div>
+
+  <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px">6</span><span style="font-size:13px">Monday: run the model again.</span></div>
+  <div style="position:relative;margin:.4rem 0 0 34px">
+    <pre id="stock-cmd-monday" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">python3 stock_model/main.py</pre>
+    <button onclick="copyCmd('stock-cmd-monday',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
+  </div>
+</div>
+
+<div class="card">
   <div class="ctitle">Where files save</div>
   <div class="c-filter-row">
     <span style="opacity:.6;font-size:12px">Candidate CSV</span>
