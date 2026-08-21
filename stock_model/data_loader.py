@@ -429,6 +429,96 @@ def download_ohlcv_data(
     return filtered
 
 
+# ---------- V2: Sector ETF momentum & earnings lookups ----------
+
+# Maps the dashboard sector names (see _GICS_TO_DASHBOARD above) to the
+# sector-tracking ETF used for the V2 sector-momentum filter.
+SECTOR_ETF_MAP: dict[str, str] = {
+    "Technology": "XLK",
+    "Healthcare": "XLV",
+    "Financials": "XLF",
+    "Consumer": "XLY",
+    "Energy": "XLE",
+    "Industrials": "XLI",
+    "Materials": "XLB",
+    "Utilities": "XLU",
+    "Real Estate": "XLRE",
+    "Telecom": "XLC",
+}
+
+
+def fetch_sector_etf_return_3w(
+    etf_ticker: str,
+    etf_cache: dict[str, float | None],
+) -> float | None:
+    """
+    Return the 3-week (15 trading day) price return for a sector ETF.
+
+    Results are cached in `etf_cache` (keyed by ETF ticker) so repeated
+    candidates in the same sector only trigger one download. Returns None
+    if the download fails or there isn't enough history — callers should
+    fail open (do not exclude the candidate) when this happens.
+    """
+    if etf_ticker in etf_cache:
+        return etf_cache[etf_ticker]
+
+    try:
+        hist = yf.download(
+            etf_ticker, period="2mo", interval="1d",
+            progress=False, auto_adjust=False,
+        )
+        close = hist["Close"]
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+        close = close.dropna()
+        if len(close) < 16:
+            etf_cache[etf_ticker] = None
+            return None
+        ret_3w = float(close.iloc[-1] / close.iloc[-16] - 1.0)
+    except Exception as exc:
+        print(f"    Warning: failed to fetch sector ETF {etf_ticker}: {exc}")
+        ret_3w = None
+
+    etf_cache[etf_ticker] = ret_3w
+    return ret_3w
+
+
+def fetch_next_week_earnings(
+    ticker: str,
+    window_start: pd.Timestamp,
+    window_end: pd.Timestamp,
+    earnings_cache: dict[str, list | None],
+) -> bool:
+    """
+    Return True if `ticker` has an earnings date in [window_start, window_end).
+
+    Earnings dates are cached in `earnings_cache` (keyed by ticker). Fails
+    open: if earnings data can't be fetched, returns False (does not
+    exclude the candidate) rather than raising.
+    """
+    if ticker in earnings_cache:
+        dates = earnings_cache[ticker]
+    else:
+        try:
+            stock = yf.Ticker(ticker)
+            ed = stock.earnings_dates
+            if ed is None or ed.empty:
+                dates = []
+            else:
+                idx = ed.index
+                if getattr(idx, "tz", None) is not None:
+                    idx = idx.tz_localize(None)
+                dates = list(idx)
+        except Exception as exc:
+            print(f"    Warning: earnings lookup failed for {ticker} ({exc}) — not excluding")
+            dates = None
+        earnings_cache[ticker] = dates
+
+    if not dates:
+        return False
+    return any(window_start <= pd.Timestamp(d) < window_end for d in dates)
+
+
 if __name__ == "__main__":
     # Simple manual test:
     sp500 = get_sp500_tickers()
