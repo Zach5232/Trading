@@ -279,11 +279,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:
   .c-form-grid{grid-template-columns:1fr 1fr}
 }
 canvas{width:100%!important}
-/* ── nav "More" dropdown (native <details>, no JS needed) ── */
-#main-tab-nav details{position:relative;margin-left:auto}
-#main-tab-nav summary{list-style:none}
-#main-tab-nav summary::-webkit-details-marker{display:none}
-.more-dropdown{position:absolute;right:0;top:calc(100% + 4px);background:#1a1a1a;border:.5px solid rgba(255,255,255,0.12);border-radius:8px;padding:6px;min-width:170px;z-index:500;box-shadow:0 4px 16px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:4px}
+/* ── nav "More" dropdown (JS-toggled, position:fixed so it escapes the
+     nav bar's overflow-x:auto — which implicitly clips overflow-y too) ── */
+#more-nav-btn{margin-left:auto}
+.more-dropdown{position:fixed;background:#1a1a1a;border:.5px solid rgba(255,255,255,0.12);border-radius:8px;padding:6px;min-width:170px;z-index:9500;box-shadow:0 4px 16px rgba(0,0,0,.35);flex-direction:column;gap:4px}
 .more-dropdown .tab-btn{width:100%;text-align:left}
 /* ── compact metric variant for the slimmed performance-metrics row ── */
 .metric-slim{padding:.55rem .7rem}
@@ -346,12 +345,10 @@ canvas{width:100%!important}
   <button id="tab-btn-stock" class="tab-btn active" onclick="showMainTab('stock')" style="white-space:nowrap">📈 Stock</button>
   <button id="tab-btn-pool" class="tab-btn" onclick="showMainTab('pool')" style="white-space:nowrap">🎯 Candidate Pool</button>
   <button id="tab-btn-howto" class="tab-btn" onclick="showMainTab('howto')" style="white-space:nowrap">📖 How to Use</button>
-  <details id="more-nav">
-    <summary class="tab-btn" style="white-space:nowrap;cursor:pointer">More ▾</summary>
-    <div class="more-dropdown">
-      <button id="tab-btn-crypto" class="tab-btn" onclick="showMainTab('crypto');document.getElementById('more-nav').open=false" style="white-space:nowrap">₿ Crypto (legacy)</button>
-    </div>
-  </details>
+  <button id="more-nav-btn" class="tab-btn" onclick="toggleMoreDropdown(event)" style="white-space:nowrap">More ▾</button>
+</div>
+<div id="more-dropdown" class="more-dropdown" style="display:none">
+  <button id="tab-btn-crypto" class="tab-btn" onclick="showMainTab('crypto');closeMoreDropdown()" style="white-space:nowrap">₿ Crypto (legacy)</button>
 </div>
 
 <!-- ── SLIM STATUS BAR (Week · Regime · Date) — informational only, no badge styling ── -->
@@ -377,43 +374,7 @@ canvas{width:100%!important}
 <div class="tagline" id="tagline-bar">—</div>
 
 <!-- ══════════════════════════════════════
-     1 — MONDAY MODEL OUTPUT
-     ══════════════════════════════════════ -->
-
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Monday model output</div>
-<div class="card" id="slate-loader-card">
-  <div class="card-hdr">
-    <div>
-      <div class="ctitle" style="margin-bottom:2px">This week's model candidates</div>
-      <div style="font-size:11px" id="slate-file-label">No file loaded — run <code style="font-size:11px">python src/main.py</code> then load the CSV</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-      <span id="slate-regime-tag" style="display:none;font-size:11px;padding:2px 9px;border-radius:8px;font-weight:500"></span>
-      <button id="slate-archive-btn" onclick="archiveCurrentSlate()" style="display:none;font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Save this week's candidates and start fresh for next week">📁 Archive week</button>
-      <button onclick="nextWeek()" style="font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Advance to next week and reset the live view">Advance week →</button>
-      <label style="cursor:pointer">
-        <input type="file" id="slate-file-input" accept=".csv" style="display:none" onchange="loadSlateCSV(this)">
-        <span class="rbtn" style="display:inline-block">📂 Load Monday slate</span>
-      </label>
-    </div>
-  </div>
-  <div id="slate-model-output"></div>
-
-  <!-- HISTORY: inline, hidden until archive has entries -->
-  <div id="slate-history-section" style="display:none;margin-top:1rem;padding-top:.75rem;border-top:.5px solid">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-      <span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;opacity:.5">Past weeks</span>
-      <select id="slate-history-select" onchange="renderSlateHistory(this.value)"
-        style="font-size:12px;padding:4px 8px;border-radius:8px;border:.5px solid;cursor:pointer">
-        <option value="">— view a past week —</option>
-      </select>
-    </div>
-    <div id="slate-history-output"></div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════
-     2 — OPEN POSITIONS
+     1 — OPEN POSITIONS
      ══════════════════════════════════════ -->
 
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Open positions</div>
@@ -488,6 +449,42 @@ canvas{width:100%!important}
     <button onclick="addTrade()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;height:34px">+ add</button>
   </div>
   <div style="margin-top:6px"><span id="add-err" style="font-size:12px"></span></div>
+</div>
+
+<!-- ══════════════════════════════════════
+     2 — MONDAY MODEL OUTPUT
+     ══════════════════════════════════════ -->
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Monday model output</div>
+<div class="card" id="slate-loader-card">
+  <div class="card-hdr">
+    <div>
+      <div class="ctitle" style="margin-bottom:2px">This week's model candidates</div>
+      <div style="font-size:11px" id="slate-file-label">No file loaded — run <code style="font-size:11px">python src/main.py</code> then load the CSV</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <span id="slate-regime-tag" style="display:none;font-size:11px;padding:2px 9px;border-radius:8px;font-weight:500"></span>
+      <button id="slate-archive-btn" onclick="archiveCurrentSlate()" style="display:none;font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Save this week's candidates and start fresh for next week">📁 Archive week</button>
+      <button onclick="nextWeek()" style="font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Advance to next week and reset the live view">Advance week →</button>
+      <label style="cursor:pointer">
+        <input type="file" id="slate-file-input" accept=".csv" style="display:none" onchange="loadSlateCSV(this)">
+        <span class="rbtn" style="display:inline-block">📂 Load Monday slate</span>
+      </label>
+    </div>
+  </div>
+  <div id="slate-model-output"></div>
+
+  <!-- HISTORY: inline, hidden until archive has entries -->
+  <div id="slate-history-section" style="display:none;margin-top:1rem;padding-top:.75rem;border-top:.5px solid">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;opacity:.5">Past weeks</span>
+      <select id="slate-history-select" onchange="renderSlateHistory(this.value)"
+        style="font-size:12px;padding:4px 8px;border-radius:8px;border:.5px solid;cursor:pointer">
+        <option value="">— view a past week —</option>
+      </select>
+    </div>
+    <div id="slate-history-output"></div>
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════
@@ -4044,6 +4041,31 @@ async function migrateWeek7Outcomes() {
     renderCandidatePool();
   } catch(e) { console.error('migrateWeek7Outcomes error:', e); }
 }
+
+/* ── "More" nav dropdown (position:fixed, computed via JS so it escapes
+     #main-tab-nav's overflow-x:auto ancestor) ── */
+function toggleMoreDropdown(e) {
+  if (e) e.stopPropagation();
+  const dd = document.getElementById('more-dropdown');
+  if (!dd) return;
+  if (dd.style.display !== 'none') { closeMoreDropdown(); return; }
+  const btn = document.getElementById('more-nav-btn');
+  const r = btn.getBoundingClientRect();
+  dd.style.top = (r.bottom + 4) + 'px';
+  dd.style.right = (window.innerWidth - r.right) + 'px';
+  dd.style.display = 'flex';
+}
+function closeMoreDropdown() {
+  const dd = document.getElementById('more-dropdown');
+  if (dd) dd.style.display = 'none';
+}
+document.addEventListener('click', function(e) {
+  const dd = document.getElementById('more-dropdown');
+  if (!dd || dd.style.display === 'none') return;
+  const btn = document.getElementById('more-nav-btn');
+  if (dd.contains(e.target) || (btn && btn.contains(e.target))) return;
+  closeMoreDropdown();
+});
 
 /* ── main tab switching ── */
 let _mainTab = 'stock';
