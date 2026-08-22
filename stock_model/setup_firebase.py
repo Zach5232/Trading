@@ -33,9 +33,23 @@ print("\nTesting Firestore connection...")
 
 try:
     import firebase_admin
-    from firebase_admin import firestore
+    from firebase_admin import credentials, firestore
     if not firebase_admin._apps:
-        firebase_admin.initialize_app()
+        try:
+            firebase_admin.initialize_app()
+        except Exception:
+            key_path = os.path.join(config_dir, 'firebase_service_account.json')
+            if os.path.exists(key_path):
+                cred = credentials.Certificate(key_path)
+                firebase_admin.initialize_app(cred)
+            else:
+                print("No credentials found. Either:")
+                print("  1. Install gcloud and run:")
+                print("     gcloud auth application-default login")
+                print("  2. Or download a service account key from:")
+                print("     Firebase Console → Project Settings → Service Accounts")
+                print("     Save as: stock_model/config/firebase_service_account.json")
+                sys.exit(1)
     db = firestore.client()
     doc = db.collection('users').document(uid)\
             .collection('data').document('candidatePool').get()

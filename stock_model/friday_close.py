@@ -32,7 +32,7 @@ import yfinance as yf
 
 try:
     import firebase_admin
-    from firebase_admin import firestore
+    from firebase_admin import credentials, firestore
 except ImportError:
     print("Firebase Admin SDK not installed.")
     print("Run: pip3 install firebase-admin --break-system-packages")
@@ -171,9 +171,35 @@ def load_uid() -> str | None:
     return uid
 
 
-def get_firestore_client():
-    if not firebase_admin._apps:
+def init_firebase() -> None:
+    """
+    Initialize firebase_admin: Application Default Credentials (gcloud) first,
+    falling back to a service account key file if ADC isn't available.
+    """
+    if firebase_admin._apps:
+        return
+    try:
         firebase_admin.initialize_app()
+        return
+    except Exception:
+        pass
+
+    key_path = PROJECT_ROOT / "config" / "firebase_service_account.json"
+    if key_path.exists():
+        cred = credentials.Certificate(str(key_path))
+        firebase_admin.initialize_app(cred)
+    else:
+        print("No credentials found. Either:")
+        print("  1. Install gcloud and run:")
+        print("     gcloud auth application-default login")
+        print("  2. Or download a service account key from:")
+        print("     Firebase Console → Project Settings → Service Accounts")
+        print("     Save as: stock_model/config/firebase_service_account.json")
+        sys.exit(1)
+
+
+def get_firestore_client():
+    init_firebase()
     return firestore.client()
 
 

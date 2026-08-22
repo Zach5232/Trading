@@ -1,2 +1,4 @@
 *
 !.gitignore
+# explicitly called out — also already covered by the wildcard above
+firebase_service_account.json
