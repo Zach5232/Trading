@@ -210,6 +210,31 @@ def get_firestore_client():
     return firestore.client()
 
 
+def load_pending_backfill_candidates(uid: str, date_str: str) -> list[dict]:
+    """
+    Sit-out weeks have no trade rows in the CSV, but backfill candidates
+    logged into candidatePool for that date may still be waiting on a
+    Friday close. Returns [{"ticker", "entry", "stop", "target"}, ...] for
+    items matching this week's date that are still pending (exitR is None)
+    and marked as sit-out backfill (taken is False).
+    """
+    db = get_firestore_client()
+    doc_ref = db.collection("users").document(uid).collection("data").document("candidatePool")
+    doc = doc_ref.get()
+    items = doc.to_dict().get("items", []) if doc.exists else []
+
+    pending = []
+    for item in items:
+        if item.get("date") == date_str and item.get("exitR") is None and item.get("taken") is False:
+            pending.append({
+                "ticker": item.get("ticker"),
+                "entry": float(item.get("entry") or 0),
+                "stop": float(item.get("stop") or 0),
+                "target": float(item.get("target") or 0),
+            })
+    return pending
+
+
 def update_candidate_pool(uid: str, date_str: str, rows: list[dict]) -> int:
     """
     Writes exitR / outcome / exitPrice into the matching pending
@@ -253,9 +278,7 @@ def main():
     date_str = _CANDIDATES_FILENAME_RE.match(csv_path.name).group(1)
 
     raw = pd.read_csv(csv_path)
-    if not _has_trade_rows(raw):
-        print(f"=== Sit-out week — no outcomes to log (candidates_{date_str}.csv) ===")
-        return
+    sit_out = not _has_trade_rows(raw)
 
     monday, friday, end = week_bounds(date_str)
     if datetime.now() < friday:
@@ -267,30 +290,44 @@ def main():
     if not uid:
         return
 
-    candidates = raw[raw["Ticker"].notna() & (raw["Ticker"].astype(str).str.strip() != "")].reset_index(drop=True)
+    if sit_out:
+        pending = load_pending_backfill_candidates(uid, date_str)
+        if not pending:
+            print(f"=== Sit-out week — no outcomes to log (candidates_{date_str}.csv) ===")
+            return
+        print(f"Sit-out week but found {len(pending)} pending backfill candidates — fetching closes...")
+        candidate_list = pending
+    else:
+        candidates = raw[raw["Ticker"].notna() & (raw["Ticker"].astype(str).str.strip() != "")].reset_index(drop=True)
+        candidate_list = [
+            {
+                "ticker": r["Ticker"],
+                "entry": float(r["Entry Price"]),
+                "stop": float(r["Stop Price"]),
+                "target": float(r["Target Price"]),
+            }
+            for _, r in candidates.iterrows()
+        ]
 
-    tickers = candidates["Ticker"].tolist()
+    tickers = [c["ticker"] for c in candidate_list]
     week_data = fetch_week_ohlc(tickers, monday, end)
 
     rows = []
-    for _, r in candidates.iterrows():
-        ticker = r["Ticker"]
+    for c in candidate_list:
+        ticker = c["ticker"]
         week_df = week_data.get(ticker)
         if week_df is None or week_df.empty:
             print(f"  ! No price data for {ticker} — skipping")
             continue
 
-        entry = float(r["Entry Price"])
-        stop = float(r["Stop Price"])
-        target = float(r["Target Price"])
-        outcome_data = compute_outcome(entry, stop, target, week_df, friday)
+        outcome_data = compute_outcome(c["entry"], c["stop"], c["target"], week_df, friday)
         if outcome_data is None:
             print(f"Market hasn't closed yet for week of {date_str}.")
             print("Run this on Friday after 4pm ET.")
             return
         exit_price, r_multiple, outcome, _target_hit = outcome_data
         rows.append({
-            "ticker": ticker, "entry": entry, "stop": stop, "target": target,
+            "ticker": ticker, "entry": c["entry"], "stop": c["stop"], "target": c["target"],
             "exit": exit_price, "r": r_multiple, "outcome": outcome,
         })
 
