@@ -2,33 +2,58 @@
 """
 First-time Firebase setup for friday_close.py
 Run once: python3 stock_model/setup_firebase.py
+
+Re-running reuses your saved UID and just re-verifies the connection.
+Use --reset to clear the saved UID and re-enter it:
+    python3 stock_model/setup_firebase.py --reset
 """
 import json
 import os
 import sys
 
-config_dir = os.path.join(os.path.dirname(__file__), 'config')
-config_path = os.path.join(config_dir, 'user_config.json')
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_DIR = os.path.join(SCRIPT_DIR, 'config')
+KEY_PATH = os.path.join(CONFIG_DIR, 'firebase_service_account.json')
+CONFIG_PATH = os.path.join(CONFIG_DIR, 'user_config.json')
 
 print("=== Stock Model — Firebase Setup ===")
-print("\nYou need your Firebase UID.")
-print("Find it here:")
-print("  1. Go to console.firebase.google.com")
-print("  2. Select project: stock-model-42fb2")
-print("  3. Click Authentication → Users")
-print("  4. Find your email row")
-print("  5. Copy the UID from that row\n")
 
-uid = input("Paste your Firebase UID: ").strip()
-if not uid:
-    print("No UID entered. Exiting.")
-    sys.exit(1)
+if '--reset' in sys.argv:
+    if os.path.exists(CONFIG_PATH):
+        os.remove(CONFIG_PATH)
+        print("✓ Cleared saved config.\n")
+    else:
+        print("No saved config to clear.\n")
 
-os.makedirs(config_dir, exist_ok=True)
-with open(config_path, 'w') as f:
-    json.dump({"uid": uid}, f, indent=2)
+uid = None
+if os.path.exists(CONFIG_PATH):
+    try:
+        with open(CONFIG_PATH) as f:
+            uid = json.load(f).get('uid')
+    except (json.JSONDecodeError, OSError):
+        uid = None
 
-print(f"\n✓ Saved to {config_path}")
+if uid:
+    print(f"✓ Using saved UID: {uid[:8]}...")
+else:
+    print("\nYou need your Firebase UID.")
+    print("Find it here:")
+    print("  1. Go to console.firebase.google.com")
+    print("  2. Select project: stock-model-42fb2")
+    print("  3. Click Authentication → Users")
+    print("  4. Find your email row")
+    print("  5. Copy the UID from that row\n")
+
+    uid = input("Paste your Firebase UID: ").strip()
+    if not uid:
+        print("No UID entered. Exiting.")
+        sys.exit(1)
+
+    os.makedirs(CONFIG_DIR, exist_ok=True)
+    with open(CONFIG_PATH, 'w') as f:
+        json.dump({"uid": uid}, f, indent=2)
+    print(f"\n✓ Saved to {CONFIG_PATH}")
+
 print("\nTesting Firestore connection...")
 
 try:
@@ -37,10 +62,14 @@ try:
     if not firebase_admin._apps:
         try:
             firebase_admin.initialize_app()
+            firestore.client()  # ADC is resolved lazily — force it now so failures are caught here
         except Exception:
-            key_path = os.path.join(config_dir, 'firebase_service_account.json')
-            if os.path.exists(key_path):
-                cred = credentials.Certificate(key_path)
+            for app in list(firebase_admin._apps.values()):
+                firebase_admin.delete_app(app)
+            print(f"  Looking for service account key at: {KEY_PATH}")
+            print(f"  Key exists: {os.path.exists(KEY_PATH)}")
+            if os.path.exists(KEY_PATH):
+                cred = credentials.Certificate(KEY_PATH)
                 firebase_admin.initialize_app(cred)
             else:
                 print("No credentials found. Either:")

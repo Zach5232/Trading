@@ -38,9 +38,11 @@ except ImportError:
     print("Run: pip3 install firebase-admin --break-system-packages")
     sys.exit(1)
 
-PROJECT_ROOT = Path(__file__).resolve().parent
-CANDIDATE_DIR = PROJECT_ROOT / "Results" / "candidates"
-CONFIG_PATH = PROJECT_ROOT / "config" / "user_config.json"
+SCRIPT_DIR = Path(__file__).resolve().parent
+CANDIDATE_DIR = SCRIPT_DIR / "Results" / "candidates"
+CONFIG_DIR = SCRIPT_DIR / "config"
+KEY_PATH = CONFIG_DIR / "firebase_service_account.json"
+CONFIG_PATH = CONFIG_DIR / "user_config.json"
 
 # Same convention as main.py: excludes _backup_/_backfill_/candidate_pool_ variants.
 _CANDIDATES_FILENAME_RE = re.compile(r"^candidates_(\d{4}-\d{2}-\d{2})\.csv$")
@@ -180,13 +182,18 @@ def init_firebase() -> None:
         return
     try:
         firebase_admin.initialize_app()
+        firestore.client()  # ADC is resolved lazily — force it now so failures are caught here
         return
     except Exception:
-        pass
+        # Tear down the partially-initialized default app so it can be
+        # re-initialized below with the fallback credential.
+        for app in list(firebase_admin._apps.values()):
+            firebase_admin.delete_app(app)
 
-    key_path = PROJECT_ROOT / "config" / "firebase_service_account.json"
-    if key_path.exists():
-        cred = credentials.Certificate(str(key_path))
+    print(f"  Looking for service account key at: {KEY_PATH}")
+    print(f"  Key exists: {KEY_PATH.exists()}")
+    if KEY_PATH.exists():
+        cred = credentials.Certificate(str(KEY_PATH))
         firebase_admin.initialize_app(cred)
     else:
         print("No credentials found. Either:")
@@ -256,8 +263,11 @@ def main():
         print("Run this on Friday after 4pm ET.")
         return
 
-    candidates = raw[raw["Ticker"].notna() & (raw["Ticker"].astype(str).str.strip() != "")].reset_index(drop=True)
     uid = load_uid()
+    if not uid:
+        return
+
+    candidates = raw[raw["Ticker"].notna() & (raw["Ticker"].astype(str).str.strip() != "")].reset_index(drop=True)
 
     tickers = candidates["Ticker"].tolist()
     week_data = fetch_week_ohlc(tickers, monday, end)
@@ -288,7 +298,7 @@ def main():
         print("No price data available for any candidates this week.")
         return
 
-    written = update_candidate_pool(uid, date_str, rows) if uid else 0
+    written = update_candidate_pool(uid, date_str, rows)
 
     header = f"{'Ticker':<8}{'Entry':<9}{'Stop':<9}{'Target':<9}{'Exit':<9}{'R':<9}{'Outcome'}"
     print(f"\n=== FRIDAY CLOSE — Week of {date_str} ===")
@@ -307,10 +317,7 @@ def main():
     print()
     print("=== SUMMARY ===")
     print(f"Wins: {wins} | Losses: {losses} | Avg R: {fmt_r(avg_r)}")
-    if uid:
-        print(f"Firestore updated: {written} record{'s' if written != 1 else ''} written")
-    else:
-        print("Firestore not configured — run python3 stock_model/setup_firebase.py to enable auto-write")
+    print(f"Firestore updated: {written} record{'s' if written != 1 else ''} written")
 
 
 if __name__ == "__main__":
