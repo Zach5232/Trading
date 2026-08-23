@@ -26,3 +26,5 @@ crypto_model/Results/crypto_backtest/
 # Keep these tracked
 !stock_model/Results/execution_log.csv
 !stock_model/Results/error_log.csv
+stock_model/*.xls
+stock_model/Data/
