@@ -15,12 +15,14 @@ Daily flow:
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 import os
 
+import numpy as np
 import pandas as pd
 
 from data_loader import (
@@ -36,6 +38,7 @@ from model_logic import (
     add_signals,
     select_top_candidates,
     classify_current_regime,
+    compute_atr,
     MIN_PRICE,
     MIN_AVG_VOL,
     MAX_STOP_DIST_PCT,
@@ -96,6 +99,31 @@ RESULTS_DIR = PROJECT_ROOT / "Results"
 RAW_DATA_DIR = DATA_DIR / "raw_data"
 EXECUTION_LOG_PATH = RESULTS_DIR / "execution_log.csv"
 CANDIDATE_DIR = RESULTS_DIR / "candidates"
+
+# ------------------- BUCKET 2 OPPORTUNITY SCANNER CONFIG (--opportunities) -------------------
+# Entirely separate from the V2 systematic model above: expanded universe,
+# different signal definitions, fixed (not risk-based) sizing. Never mixed
+# into V2's own candidates CSV, Firestore writes, or filter logic.
+MASTER_UNIVERSE_PATH = RAW_DATA_DIR / "master_universe.json"
+SP500_CACHE_PATH = RAW_DATA_DIR / "sp500_tickers.csv"
+OPP_DOWNLOAD_BATCH_SIZE = 100
+
+OPP_MOMENTUM_MIN_RET_3W = 0.30   # Signal 1: 3W return floor
+OPP_VOLUME_MIN_SURGE = 5.0       # Signal 2: volume-vs-20d-avg floor
+OPP_VOLUME_MIN_RET_3W = 0.10     # Signal 2: 3W return floor (looser than Signal 1)
+OPP_MIN_AVG_DV_M = 50.0          # both signals: min $M avg daily dollar volume
+OPP_MIN_PRICE = 10.0             # both signals: min price
+OPP_MAX_ATR_PCT = 0.20           # both signals: max ATR% (volatility cap)
+OPP_TOP_N = 10
+
+OPP_SIZING_NOTE = "$300-500 deployed (fixed, not risk-based)"
+
+OPP_CSV_COLUMNS = [
+    "Rank", "Ticker", "Universe", "Signal", "Score",
+    "Return 3W", "Return 1W", "Vol Surge", "Entry Price",
+    "Stop Price", "Target Price", "Avg DV ($M)", "Accel",
+    "Dist 52W", "ATR Pct",
+]
 
 
 def ensure_directories() -> None:
@@ -881,6 +909,296 @@ def run_backfill(backfill_date_str: str) -> Path | None:
     return out_path
 
 
+# ------------------- BUCKET 2 OPPORTUNITY SCANNER (--opportunities) -------------------
+#
+# Runs AFTER the V2 model, over an expanded universe (Russell 1000 names not
+# already in the S&P 500, Russell Midcap, and a curated ETF list), using two
+# independent momentum/volume-surge signals. Entirely separate from V2:
+# different universe, different filters, discretionary fixed-dollar sizing
+# instead of risk-based sizing. Never touches V2's candidates CSV, Firestore,
+# or filter logic — only ever reads master_universe.json and the cached
+# sp500_tickers.csv, and writes its own opportunities_YYYY-MM-DD.csv.
+
+_opp_price_cache: pd.DataFrame | None = None  # per-process download cache
+
+
+def load_sp500_cache() -> list[str]:
+    """Reads the S&P 500 ticker cache written by build_universe() — avoids a second scrape."""
+    if not SP500_CACHE_PATH.exists():
+        return []
+    return pd.read_csv(SP500_CACHE_PATH, header=None)[0].dropna().astype(str).tolist()
+
+
+def load_opportunity_universe() -> tuple[list[str], dict[str, set[str]]]:
+    """
+    Builds the Bucket 2 scan universe from master_universe.json: R1000 extra
+    + MidCap + ETFs, deduplicated, excluding anything already in the S&P 500
+    (V2's own universe) to avoid double-counting.
+
+    Returns (opp_universe, universe_sets) — universe_sets holds the raw
+    (unfiltered) per-bucket sets, used later to label each candidate's
+    source universe in the output CSV.
+    """
+    if not MASTER_UNIVERSE_PATH.exists():
+        print(f"!!! {MASTER_UNIVERSE_PATH} not found — run stock_model/scripts/build_universe.py first")
+        return [], {"r1000_extra": set(), "midcap": set(), "etfs": set()}
+
+    with open(MASTER_UNIVERSE_PATH) as f:
+        universe = json.load(f)
+
+    r1000_extra = universe.get("r1000_extra", [])
+    midcap = universe.get("midcap", [])
+    etfs = universe.get("etfs", [])
+
+    sp500_set = set(load_sp500_cache())
+    combined = list(dict.fromkeys(r1000_extra + midcap + etfs))  # de-dupe, preserve order
+    opp_universe = [t for t in combined if t not in sp500_set]
+
+    print(f">>> Opportunity universe: {len(opp_universe)} tickers")
+    print(f"     (R1000 extra: {len(r1000_extra)}, MidCap: {len(midcap)}, ETFs: {len(etfs)})")
+
+    return opp_universe, {
+        "r1000_extra": set(r1000_extra),
+        "midcap": set(midcap),
+        "etfs": set(etfs),
+    }
+
+
+def download_opportunity_universe(tickers: list[str]) -> pd.DataFrame:
+    """
+    Downloads OHLCV for the opportunity universe in batches of
+    OPP_DOWNLOAD_BATCH_SIZE (same fetch_price_data/yfinance pattern the V2
+    model uses). Cached at module scope for the lifetime of the process.
+    """
+    global _opp_price_cache
+    if _opp_price_cache is not None:
+        return _opp_price_cache
+
+    print(">>> Downloading opportunity universe data...")
+    batches = [
+        tickers[i:i + OPP_DOWNLOAD_BATCH_SIZE]
+        for i in range(0, len(tickers), OPP_DOWNLOAD_BATCH_SIZE)
+    ]
+    frames = []
+    for i, batch in enumerate(batches, start=1):
+        print(f"    Batch {i}/{len(batches)} ({len(batch)} tickers)...")
+        df = fetch_price_data(tickers=batch, period=PRICE_HISTORY_PERIOD, interval=PRICE_HISTORY_INTERVAL)
+        if not df.empty:
+            frames.append(df)
+
+    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    valid_tickers = combined["ticker"].nunique() if not combined.empty else 0
+    print(f"    Tickers with valid data: {valid_tickers}")
+
+    _opp_price_cache = combined
+    return combined
+
+
+def compute_opportunity_signals(price_data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Computes ret_3w, ret_1w, vol_surge, atr_14, atr_pct, dist_52w, accel,
+    and avg_dv_m for the most recent trading day of each ticker.
+    """
+    if price_data.empty:
+        return pd.DataFrame()
+
+    frames = []
+    for ticker, grp in price_data.groupby("ticker", sort=False):
+        g = grp.sort_values("date").copy()
+        g["ret_1w"] = g["close"].pct_change(5, fill_method=None)
+        g["ret_3w"] = g["close"].pct_change(15, fill_method=None)
+        g["atr_14"] = compute_atr(g, period=14)
+        g["avg_vol_20"] = g["volume"].rolling(20, min_periods=20).mean()
+        g["high_252"] = g["high"].rolling(252, min_periods=1).max()
+        frames.append(g)
+
+    df = pd.concat(frames)
+    df.sort_values(["ticker", "date"], inplace=True)
+    latest = df.groupby("ticker", as_index=False).tail(1).reset_index(drop=True)
+
+    latest["price"] = latest["close"]
+    latest["vol_surge"] = latest["volume"] / latest["avg_vol_20"].replace(0, np.nan)
+    latest["atr_pct"] = latest["atr_14"] / latest["price"]
+    latest["dist_52w"] = (latest["close"] - latest["high_252"]) / latest["high_252"]
+    latest["accel"] = latest["ret_1w"] > (latest["ret_3w"] / 3.0)
+    latest["avg_dv_m"] = (latest["avg_vol_20"] * latest["price"]) / 1e6
+
+    return latest
+
+
+def apply_opportunity_signals(signals: pd.DataFrame) -> pd.DataFrame:
+    """Applies the two Bucket 2 signal definitions and labels qualifying rows."""
+    if signals.empty:
+        return signals
+
+    df = signals.copy()
+
+    momentum = (
+        (df["ret_3w"] >= OPP_MOMENTUM_MIN_RET_3W)
+        & df["accel"].fillna(False)
+        & (df["avg_dv_m"] >= OPP_MIN_AVG_DV_M)
+        & (df["price"] >= OPP_MIN_PRICE)
+        & (df["atr_pct"] <= OPP_MAX_ATR_PCT)
+    ).fillna(False)
+
+    volume_break = (
+        (df["vol_surge"] >= OPP_VOLUME_MIN_SURGE)
+        & (df["ret_3w"] >= OPP_VOLUME_MIN_RET_3W)
+        & (df["avg_dv_m"] >= OPP_MIN_AVG_DV_M)
+        & (df["price"] >= OPP_MIN_PRICE)
+        & (df["atr_pct"] <= OPP_MAX_ATR_PCT)
+    ).fillna(False)
+
+    def label(is_momentum: bool, is_volume: bool) -> str | None:
+        if is_momentum and is_volume:
+            return "MOMENTUM+VOL"
+        if is_momentum:
+            return "MOMENTUM"
+        if is_volume:
+            return "VOLUME_BREAK"
+        return None
+
+    df["signal"] = [label(m, v) for m, v in zip(momentum, volume_break)]
+    return df[df["signal"].notna()].copy()
+
+
+def score_and_rank_opportunities(candidates: pd.DataFrame, top_n: int = OPP_TOP_N) -> pd.DataFrame:
+    """Scores by momentum_score, sorts descending, returns the top N across both signal types."""
+    if candidates.empty:
+        return candidates
+
+    df = candidates.copy()
+    df["momentum_score"] = (
+        df["ret_3w"].fillna(0.0) * 0.40
+        + df["ret_1w"].fillna(0.0) * 0.30
+        + (df["vol_surge"].fillna(0.0) / 10) * 0.20
+        + df["accel"].fillna(False).astype(int) * 0.10
+    )
+    df = df.sort_values("momentum_score", ascending=False).reset_index(drop=True)
+    return df.head(top_n)
+
+
+def compute_opportunity_prices(candidates: pd.DataFrame) -> pd.DataFrame:
+    """Entry/stop/target using the same 0.75x-ATR stop and 2R target as the V2 model."""
+    if candidates.empty:
+        return candidates
+
+    df = candidates.copy()
+    df["entry_price"] = df["price"]
+    df["stop_price"] = df["entry_price"] - (ATR_STOP_MULTIPLE * df["atr_14"])
+    df["target_price"] = df["entry_price"] + (2.0 * (df["entry_price"] - df["stop_price"]))
+    return df
+
+
+def print_opportunity_table(candidates: pd.DataFrame) -> None:
+    print(">>> " + "=" * 60)
+    print(">>> BUCKET 2 — OPPORTUNITY SCANNER")
+    print(">>> " + "=" * 60)
+    print(">>> Signal 1 (MOMENTUM): 3W>=30% + accel + dv>$50M")
+    print(">>> Signal 2 (VOLUME_BREAK): vol>=5x + 3W>=10% + dv>$50M")
+    print(">>> Universe: R1000 extra + MidCap + ETFs")
+    print(">>>")
+
+    if candidates.empty:
+        print(">>> No Bucket 2 opportunities this week")
+        return
+
+    print(
+        f">>> {'Rank':<6}{'Ticker':<8}{'Signal':<16}{'Score':<7}{'3W Ret':<8}"
+        f"{'1W Ret':<8}{'Vol':<6}{'Entry':<8}{'Stop':<8}{'Target':<8}{'DV($M)':<8}{'Accel'}"
+    )
+    print(">>> " + "-" * 87)
+    for i, row in enumerate(candidates.itertuples(), start=1):
+        accel_mark = "✓" if row.accel else "✗"
+        ret_3w_s = f"{row.ret_3w*100:.1f}%"
+        ret_1w_s = f"{row.ret_1w*100:.1f}%"
+        vol_s = f"{row.vol_surge:.1f}x"
+        print(
+            f">>> {i:<6}{row.ticker:<8}{row.signal:<16}{row.momentum_score:<7.2f}"
+            f"{ret_3w_s:<8}{ret_1w_s:<8}{vol_s:<6}"
+            f"{row.entry_price:<8.2f}{row.stop_price:<8.2f}{row.target_price:<8.2f}"
+            f"{row.avg_dv_m:<8.0f}{accel_mark}"
+        )
+    print(">>>")
+    print(f">>> Sizing: {OPP_SIZING_NOTE.split(' (')[0]} per play (fixed)")
+    print(">>> Max 2 open at any time")
+    print(">>> No mandatory Friday exit — hold until thesis breaks")
+    print(">>> These are NOT systematic V2 trades — discretionary only")
+
+
+def save_opportunities_csv(
+    candidates: pd.DataFrame,
+    date_str: str,
+    universe_sets: dict[str, set[str]],
+) -> Path:
+    """Saves Results/candidates/opportunities_YYYY-MM-DD.csv (headers-only if no candidates)."""
+    out_path = CANDIDATE_DIR / f"opportunities_{date_str}.csv"
+
+    if candidates.empty:
+        pd.DataFrame(columns=OPP_CSV_COLUMNS).to_csv(out_path, index=False)
+        return out_path
+
+    def which_universe(ticker: str) -> str:
+        if ticker in universe_sets["r1000_extra"]:
+            return "R1000"
+        if ticker in universe_sets["midcap"]:
+            return "MidCap"
+        if ticker in universe_sets["etfs"]:
+            return "ETF"
+        return "Other"
+
+    df = candidates.reset_index(drop=True).copy()
+    out = pd.DataFrame({
+        "Rank":         range(1, len(df) + 1),
+        "Ticker":       df["ticker"],
+        "Universe":     df["ticker"].map(which_universe),
+        "Signal":       df["signal"],
+        "Score":        df["momentum_score"].round(4),
+        "Return 3W":    df["ret_3w"].round(4),
+        "Return 1W":    df["ret_1w"].round(4),
+        "Vol Surge":    df["vol_surge"].round(2),
+        "Entry Price":  df["entry_price"].round(2),
+        "Stop Price":   df["stop_price"].round(2),
+        "Target Price": df["target_price"].round(2),
+        "Avg DV ($M)":  df["avg_dv_m"].round(1),
+        "Accel":        df["accel"],
+        "Dist 52W":     df["dist_52w"].round(4),
+        "ATR Pct":      df["atr_pct"].round(4),
+    })
+    out.to_csv(out_path, index=False)
+    return out_path
+
+
+def run_opportunity_scanner(dry_run: bool = False) -> Path | None:
+    """
+    Entry point for --opportunities. Reads master_universe.json + the S&P
+    500 cache (never re-scrapes), scans, prints, and saves — independent of
+    everything run_daily_model() just did.
+    """
+    today_str = datetime.today().strftime("%Y-%m-%d")
+
+    opp_universe, universe_sets = load_opportunity_universe()
+
+    if opp_universe:
+        price_data = download_opportunity_universe(opp_universe)
+        signals = compute_opportunity_signals(price_data)
+        flagged = apply_opportunity_signals(signals)
+        ranked = score_and_rank_opportunities(flagged)
+        priced = compute_opportunity_prices(ranked)
+    else:
+        priced = pd.DataFrame()
+
+    print_opportunity_table(priced)
+
+    if dry_run:
+        print(">>> DRY RUN — opportunities CSV not saved")
+        return None
+
+    out_path = save_opportunities_csv(priced, today_str, universe_sets)
+    print(f">>> Opportunities saved to: {out_path}")
+    return out_path
+
+
 # ------------------- CSV SCHEMA VALIDATION -------------------
 
 REQUIRED_COLUMNS = [
@@ -916,6 +1234,16 @@ if __name__ == "__main__":
         metavar="DATE",
         help="Generate backfill candidates for a past date (YYYY-MM-DD). Regime filter is bypassed.",
     )
+    parser.add_argument(
+        "--opportunities",
+        action="store_true",
+        help="After the V2 model, run the Bucket 2 opportunity scanner (R1000 extra + MidCap + ETFs).",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="With --opportunities, print results without saving opportunities_YYYY-MM-DD.csv.",
+    )
     args = parser.parse_args()
 
     if args.backfill:
@@ -923,3 +1251,5 @@ if __name__ == "__main__":
     else:
         # Set log_trades=True if you want to automatically append to execution_log.csv
         run_daily_model(log_trades=False)
+        if args.opportunities:
+            run_opportunity_scanner(dry_run=args.dry_run)

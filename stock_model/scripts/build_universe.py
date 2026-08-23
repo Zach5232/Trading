@@ -31,6 +31,17 @@ RAW_DATA_DIR = STOCK_MODEL_DIR / "Data" / "raw_data"
 SP500_CACHE = RAW_DATA_DIR / "sp500_tickers.csv"
 OUTPUT_PATH = RAW_DATA_DIR / "master_universe.json"
 
+# Add tickers here when yfinance consistently fails
+# to download them. Re-run build_universe.py after
+# adding new exclusions.
+DELISTED_EXCLUSIONS = {
+    'BFA',    # delisted/renamed
+    'HOLX',   # no yfinance data
+    'HEIA',   # delisted/renamed
+    'LENB',   # delisted/renamed
+    'UHALB',  # delisted/renamed
+}
+
 ISHARES_FILES = {
     "r1000": STOCK_MODEL_DIR / "iShares-Russell-1000-ETF_fund.xls",
     "r2000": STOCK_MODEL_DIR / "iShares-Russell-2000-ETF_fund.xls",
@@ -106,6 +117,11 @@ def load_equity_tickers(path: Path, dash_fix: dict[str, str]) -> list[str]:
     return sorted(tickers)
 
 
+def exclude_delisted(tickers: list[str]) -> list[str]:
+    """Filters out DELISTED_EXCLUSIONS from a ticker list."""
+    return [t for t in tickers if t not in DELISTED_EXCLUSIONS]
+
+
 def load_sp500() -> list[str]:
     if SP500_CACHE.exists():
         df = pd.read_csv(SP500_CACHE, header=None)
@@ -129,25 +145,37 @@ def main():
     RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
     print("\n1. Loading S&P 500...")
-    sp500 = load_sp500()
+    sp500_raw = load_sp500()
 
     # iShares exports concatenate dual-class suffixes with no separator
     # (e.g. "BRKB", "BFB") instead of "BRK-B"/"BF-B". Correct any that
     # collide with a dash-containing S&P 500 ticker once collapsed —
     # names outside the S&P 500 cache are left in their native form.
-    dash_fix = {t.replace("-", ""): t for t in sp500 if "-" in t}
+    dash_fix = {t.replace("-", ""): t for t in sp500_raw if "-" in t}
 
     print("\n2. Parsing Russell 1000 holdings (IWB)...")
-    r1000 = load_equity_tickers(ISHARES_FILES["r1000"], dash_fix)
-    print(f"   Russell 1000: {len(r1000)} equity tickers")
+    r1000_raw = load_equity_tickers(ISHARES_FILES["r1000"], dash_fix)
+    print(f"   Russell 1000: {len(r1000_raw)} equity tickers")
 
     print("\n3. Parsing Russell 2000 holdings (IWM)...")
-    r2000 = load_equity_tickers(ISHARES_FILES["r2000"], dash_fix)
-    print(f"   Russell 2000: {len(r2000)} equity tickers")
+    r2000_raw = load_equity_tickers(ISHARES_FILES["r2000"], dash_fix)
+    print(f"   Russell 2000: {len(r2000_raw)} equity tickers")
 
     print("\n4. Parsing Russell Midcap holdings (IWR)...")
-    midcap = load_equity_tickers(ISHARES_FILES["midcap"], dash_fix)
-    print(f"   Russell Midcap: {len(midcap)} equity tickers")
+    midcap_raw = load_equity_tickers(ISHARES_FILES["midcap"], dash_fix)
+    print(f"   Russell Midcap: {len(midcap_raw)} equity tickers")
+
+    # Drop known-bad tickers (delisted/renamed/no yfinance data) before any
+    # of the derived sets below are built, so the exclusion propagates
+    # everywhere (r1000_extra, r2000_only, all_equity included).
+    raw_combined = set(sp500_raw) | set(r1000_raw) | set(r2000_raw) | set(midcap_raw) | set(ETF_TICKERS)
+    excluded_found = DELISTED_EXCLUSIONS & raw_combined
+    print(f"\n>>> Excluded {len(excluded_found)} delisted/unavailable tickers")
+
+    sp500 = exclude_delisted(sp500_raw)
+    r1000 = exclude_delisted(r1000_raw)
+    r2000 = exclude_delisted(r2000_raw)
+    midcap = exclude_delisted(midcap_raw)
 
     print("\n5. Building derived sets...")
     sp500_set = set(sp500)
@@ -170,7 +198,7 @@ def main():
         "r2000": r2000,
         "r2000_only": r2000_only,
         "midcap": midcap,
-        "etfs": sorted(set(ETF_TICKERS)),
+        "etfs": sorted(set(exclude_delisted(ETF_TICKERS))),
         "all_equity": all_equity,
     }
 
