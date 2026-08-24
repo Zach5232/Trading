@@ -3424,9 +3424,9 @@ function slateStatusInfo(liveVal, entry, maxEntry, stop){
   const origDist = entry - stop;
   const remainDist = liveVal - stop;
   if(origDist > 0 && (remainDist / origDist) < 0.25){
-    return { text: 'PLAY · stop close', bg:'#FAEEDA', fg:'#854F0B' };
+    return { text: 'TRADE · stop close ⚠', bg:'#FAEEDA', fg:'#854F0B' };
   }
-  return { text: 'PLAY', bg:'#E1F5EE', fg:'#085041' };
+  return { text: 'TRADE', bg:'#E1F5EE', fg:'#085041' };
 }
 
 function statusBadgeHtml(status, T){
@@ -3730,7 +3730,7 @@ function oppInitSection(){
 // Reference-only list from `main.py --opportunities` — separate from the
 // opportunisticPlays log below. Stored in localStorage only (not Firestore):
 // it's a disposable weekly scan snapshot, not trade history.
-let oppScanStore = { rows: [], date: '', filename: '' };
+let oppScanStore = { rows: [], date: '', filename: '', livePrices: {}, deployed: {} };
 
 function saveOppScanStore(){
   try{ localStorage.setItem('oppScanStore', JSON.stringify(oppScanStore)); }catch(e){}
@@ -3766,7 +3766,9 @@ function loadOppScanCSV(input){
     oppScanStore = {
       rows,
       date: file.name.match(/\d{4}-\d{2}-\d{2}/)?.[0] || '',
-      filename: file.name
+      filename: file.name,
+      livePrices: {},
+      deployed: {}
     };
     saveOppScanStore();
     renderOppScan();
@@ -3775,8 +3777,58 @@ function loadOppScanCSV(input){
   reader.readAsText(file);
 }
 
+// Bucket 2 has no backtested "don't chase" premium of its own — main.py's
+// --opportunities scanner doesn't output one. Reusing the systematic
+// model's backtested 0.6% threshold here as a labeled placeholder, not a
+// validated Bucket-2-specific number. Surfaced in the UI as "Max entry*"
+// with a footnote — don't let this read as equally rigorous to the
+// systematic Max Entry column.
+const OPP_MAX_ENTRY_PLACEHOLDER_PCT = 1.006;
+
+function oppStatusInfo(ret3w, accel, dist52w, dv, liveVal, entry, maxEntry){
+  const fails = [];
+  if(ret3w < 0.20) fails.push('3W<20%');
+  if(!accel) fails.push('no accel');
+  if(dist52w > -0.05) fails.push('near 52W high');
+  if(dv < 100) fails.push('$vol<$100M');
+  if(fails.length){
+    return { text: 'SKIP · ' + fails[0] + (fails.length>1?' +'+(fails.length-1):''), bg:'#fcebeb', fg:'#a32d2d' };
+  }
+  if(!isNaN(liveVal) && liveVal > maxEntry){
+    return { text: 'SKIP · above max', bg:'#fcebeb', fg:'#a32d2d' };
+  }
+  return { text: 'TRADE', bg:'#E1F5EE', fg:'#085041' };
+}
+
+function updateOppLive(inputEl){
+  const ticker = inputEl.dataset.ticker;
+  const val = inputEl.value === '' ? NaN : parseFloat(inputEl.value);
+  oppScanStore.livePrices = oppScanStore.livePrices || {};
+  if(isNaN(val)) delete oppScanStore.livePrices[ticker];
+  else oppScanStore.livePrices[ticker] = val;
+  saveOppScanStore();
+
+  const T = THEME;
+  const status = oppStatusInfo(
+    parseFloat(inputEl.dataset.ret3w), inputEl.dataset.accel === '1',
+    parseFloat(inputEl.dataset.dist52w), parseFloat(inputEl.dataset.dv),
+    val, parseFloat(inputEl.dataset.entry), parseFloat(inputEl.dataset.maxentry)
+  );
+  const statusCell = document.getElementById('opp-status-cell-' + ticker);
+  if(statusCell) statusCell.innerHTML = statusBadgeHtml(status, T);
+}
+
+function updateOppDeploy(inputEl){
+  const ticker = inputEl.dataset.ticker;
+  const val = inputEl.value === '' ? NaN : parseFloat(inputEl.value);
+  oppScanStore.deployed = oppScanStore.deployed || {};
+  if(isNaN(val)) delete oppScanStore.deployed[ticker];
+  else oppScanStore.deployed[ticker] = val;
+  saveOppScanStore();
+}
+
 function buildOppScanTable(rows, T){
-  const cols = ['Rank','Ticker','Signal','Score','3W Ret','1W Ret','Entry','Stop','Target','DV($M)','Accel','Action'];
+  const cols = ['Rank','Ticker','Signal','Score','3W Ret','1W Ret','Entry','Max Entry*','Stop','Target','DV($M)','Accel','Live $','Deploy $','Status','Action'];
   let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
     + '<thead><tr style="border-bottom:.5px solid ' + T.cardBorder + '">'
     + cols.map(h => '<th style="text-align:' + (h==='Ticker'||h==='Signal'||h==='Action'?'left':'right') + ';padding:5px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:' + T.textMuted + ';font-weight:500">' + h + '</th>').join('')
@@ -3792,9 +3844,17 @@ function buildOppScanTable(rows, T){
     const stop   = parseFloat(r['Stop Price']) || 0;
     const tgt    = parseFloat(r['Target Price']) || 0;
     const dv     = parseFloat(r['Avg DV ($M)']) || 0;
+    const dist52w = parseFloat(r['Dist 52W']) || 0;
     const accel  = /^(true|1|yes)$/i.test(String(r['Accel']||'').trim());
+    const maxEntry = entry * OPP_MAX_ENTRY_PLACEHOLDER_PCT;
     const rowBg  = idx % 2 === 0 ? T.cardBg : T.metricBg;
     const rank   = parseInt(r['Rank']) || (idx + 1);
+
+    const storedLive = oppScanStore.livePrices ? oppScanStore.livePrices[ticker] : undefined;
+    const liveVal = (storedLive !== undefined && storedLive !== null && storedLive !== '') ? parseFloat(storedLive) : NaN;
+    const storedDeploy = oppScanStore.deployed ? oppScanStore.deployed[ticker] : undefined;
+    const deployVal = (storedDeploy !== undefined && storedDeploy !== null && storedDeploy !== '') ? parseFloat(storedDeploy) : 400;
+    const status = oppStatusInfo(ret3w, accel, dist52w, dv, liveVal, entry, maxEntry);
 
     html += '<tr style="background:' + rowBg + ';border-bottom:.5px solid ' + T.cardBorder + '">'
       + '<td style="padding:6px;text-align:right;color:' + T.textMuted + '">#' + rank + '</td>'
@@ -3804,16 +3864,29 @@ function buildOppScanTable(rows, T){
       + '<td style="padding:6px;text-align:right;color:' + (ret3w>=0?T.win:T.loss) + '">' + (ret3w*100>=0?'+':'') + (ret3w*100).toFixed(1) + '%</td>'
       + '<td style="padding:6px;text-align:right;color:' + (ret1w>=0?T.win:T.loss) + '">' + (ret1w*100>=0?'+':'') + (ret1w*100).toFixed(1) + '%</td>'
       + '<td style="padding:6px;text-align:right;color:' + T.textPrimary + '">$' + entry.toFixed(2) + '</td>'
+      + '<td style="padding:6px;text-align:right;color:#c8890a">$' + maxEntry.toFixed(2) + '</td>'
       + '<td style="padding:6px;text-align:right;color:' + T.loss + '">$' + stop.toFixed(2) + '</td>'
       + '<td style="padding:6px;text-align:right;color:' + T.win + '">$' + tgt.toFixed(2) + '</td>'
       + '<td style="padding:6px;text-align:right;color:' + T.textMuted + '">' + dv.toFixed(0) + '</td>'
       + '<td style="padding:6px;text-align:center">' + (accel ? '<span style="color:' + T.win + ';font-weight:600">✓</span>' : '') + '</td>'
+      + '<td style="padding:6px;text-align:right">'
+        + '<input type="number" step="0.01" placeholder="' + entry.toFixed(2) + '" value="' + (isNaN(liveVal)?'':liveVal) + '" '
+        + 'data-ticker="' + ticker + '" data-entry="' + entry + '" data-maxentry="' + maxEntry + '" data-ret3w="' + ret3w + '" data-accel="' + (accel?1:0) + '" data-dist52w="' + dist52w + '" data-dv="' + dv + '" '
+        + 'oninput="updateOppLive(this)" '
+        + 'style="width:66px;font-size:12px;padding:4px 6px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.metricBg + ';color:' + T.textPrimary + ';text-align:right">'
+        + '</td>'
+      + '<td style="padding:6px;text-align:right">'
+        + '<input type="number" step="1" min="300" max="500" value="' + deployVal + '" '
+        + 'data-ticker="' + ticker + '" oninput="updateOppDeploy(this)" '
+        + 'style="width:60px;font-size:12px;padding:4px 6px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.metricBg + ';color:' + T.textPrimary + ';text-align:right">'
+        + '</td>'
+      + '<td style="padding:6px;text-align:center" id="opp-status-cell-' + ticker + '">' + statusBadgeHtml(status, T) + '</td>'
       + '<td style="padding:6px"><button onclick="oppPrefillFromScan(\'' + ticker + '\',' + entry + ')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">→ log</button></td>'
       + '</tr>';
   });
 
   html += '</tbody></table></div>';
-  html += '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:6px;font-style:italic">Reference only — apply the manual criteria above before logging. Max $300–500 deployed, max 2 open. Clicking → log pre-fills the form below; confirm price/size before saving.</div>';
+  html += '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:6px;font-style:italic">Status is computed from your manual criteria (3W≥20%, accelerating, not within 5% of 52W high, $vol&gt;$100M) plus Live $ vs Max Entry. * Max Entry reuses the systematic model\'s backtested 0.6% chase threshold as a placeholder — not independently validated for Bucket 2. Max 2 open at any time, regardless of how many say TRADE. Clicking → log pre-fills the form below with your Deploy $; confirm before saving.</div>';
   return html;
 }
 
@@ -3840,8 +3913,10 @@ function oppPrefillFromScan(ticker, entryPrice){
   if(tEl) tEl.value = ticker;
   const pEl = document.getElementById('opp-in-price');
   if(pEl) pEl.value = entryPrice;
+  const storedDeploy = oppScanStore.deployed ? oppScanStore.deployed[ticker] : undefined;
+  const depDefault = (storedDeploy !== undefined && storedDeploy !== null && storedDeploy !== '') ? storedDeploy : 400;
   const depEl = document.getElementById('opp-in-deployed');
-  if(depEl && !depEl.value) depEl.value = 400;
+  if(depEl) depEl.value = depDefault;
   if(tEl) tEl.scrollIntoView({ behavior:'smooth', block:'center' });
 }
 
