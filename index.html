@@ -528,6 +528,18 @@ canvas{width:100%!important}
       </div>
     </div>
 
+    <!-- Part A2: load this week's opportunity scan -->
+    <div style="margin-bottom:.85rem">
+      <div class="ctitle" style="margin-bottom:.4rem;font-size:12px">This week's scan</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:.5rem">
+        <label style="display:inline-block;cursor:pointer;font-size:11px;padding:4px 10px;border:.5px solid rgba(255,255,255,0.12);border-radius:6px;background:#1a1a1a;color:#e8e6e0">
+          Choose file <input type="file" id="opp-scan-file-input" accept=".csv" style="display:none" onchange="loadOppScanCSV(this)">
+        </label>
+        <span id="opp-scan-file-label" style="font-size:11px;opacity:.6">No file loaded — run python3 stock_model/main.py --opportunities then load opportunities_YYYY-MM-DD.csv</span>
+      </div>
+      <div id="opp-scan-output"></div>
+    </div>
+
     <!-- Part B: open plays -->
     <div class="ctitle" style="margin-bottom:.5rem">Open plays</div>
     <div id="opp-open-list" style="margin-bottom:.85rem"><div style="font-size:13px;opacity:.5">No open plays</div></div>
@@ -3399,10 +3411,69 @@ function buildFilterDetailSection(rows, T){
     + '</div></details>';
 }
 
+function slateStatusInfo(liveVal, entry, maxEntry, stop){
+  if(liveVal === undefined || liveVal === null || isNaN(liveVal)){
+    return { text: 'Enter price', muted: true };
+  }
+  if(liveVal > maxEntry){
+    return { text: 'SKIP · above max', bg:'#fcebeb', fg:'#a32d2d' };
+  }
+  if(liveVal <= stop){
+    return { text: 'SKIP · at/below stop', bg:'#fcebeb', fg:'#a32d2d' };
+  }
+  const origDist = entry - stop;
+  const remainDist = liveVal - stop;
+  if(origDist > 0 && (remainDist / origDist) < 0.25){
+    return { text: 'PLAY · stop close', bg:'#FAEEDA', fg:'#854F0B' };
+  }
+  return { text: 'PLAY', bg:'#E1F5EE', fg:'#085041' };
+}
+
+function statusBadgeHtml(status, T){
+  return status.muted
+    ? '<span style="font-size:10px;color:' + T.textMuted + '">' + status.text + '</span>'
+    : '<span class="slate-badge" style="background:' + status.bg + ';color:' + status.fg + '">' + status.text + '</span>';
+}
+
+function updateLivePrice(inputEl){
+  const ticker = inputEl.dataset.ticker;
+  const entry = parseFloat(inputEl.dataset.entry);
+  const maxEntry = parseFloat(inputEl.dataset.maxentry);
+  const stop = parseFloat(inputEl.dataset.stop);
+  const shares = parseInt(inputEl.dataset.shares) || 0;
+  const raw = inputEl.value;
+  const val = raw === '' ? NaN : parseFloat(raw);
+
+  const slateData = getCurrentSlate();
+  if(slateData){
+    slateData.livePrices = slateData.livePrices || {};
+    if(isNaN(val)) delete slateData.livePrices[ticker];
+    else slateData.livePrices[ticker] = val;
+    saveSlates();
+  }
+
+  const T = THEME;
+  const status = slateStatusInfo(val, entry, maxEntry, stop);
+  const statusCell = document.getElementById('status-cell-' + ticker);
+  if(statusCell) statusCell.innerHTML = statusBadgeHtml(status, T);
+
+  const deployCell = document.getElementById('deploy-cell-' + ticker);
+  if(deployCell){
+    const signalCapital = Math.round(shares * entry);
+    if(!isNaN(val) && val > 0){
+      const liveCapital = Math.round(shares * val);
+      deployCell.innerHTML = '$' + liveCapital.toLocaleString() + '<div style="font-size:9px;color:' + T.textMuted + '">signal $' + signalCapital.toLocaleString() + '</div>';
+    } else {
+      deployCell.innerHTML = '$' + signalCapital.toLocaleString();
+    }
+  }
+}
+
 function buildSlateTable(rows, showLogBtn, T){
-  const cols = ['Rank','Ticker','Sector','Score','Entry','Stop','Target','Shares','Filters','Sizing','Accel'];
+  const cols = ['Rank','Ticker','Sector','Score','Entry','Max Entry','Deploy $','Stop','Target','Shares','Live $','Status','Filters','Sizing','Accel'];
   if(showLogBtn) cols.push('Action');
-  const mobileHidden = new Set(['Sector','Score','Entry','Stop','Target','Shares']);
+  const mobileHidden = new Set(['Sector','Score','Entry','Max Entry','Stop','Target','Shares']);
+  const liveSlateData = showLogBtn ? getCurrentSlate() : null;
 
   let html = '<div style="overflow-x:auto;margin-top:.5rem">'
     + '<table style="width:100%;border-collapse:collapse;font-size:12px">'
@@ -3423,8 +3494,12 @@ function buildSlateTable(rows, showLogBtn, T){
     const rsi    = parseFloat(r['RSI 14'])||0;
     const risk   = ((entry - stop) * shares).toFixed(0);
     const capital = Math.round(shares * entry);
-    const maxEntry = entry * 1.01;
     const ticker = r['Ticker'];
+    const maxEntryRaw = r['Max Entry'];
+    const maxEntry = maxEntryRaw !== undefined && maxEntryRaw !== '' ? parseFloat(maxEntryRaw) : entry * 1.006;
+    const storedLive = liveSlateData && liveSlateData.livePrices ? liveSlateData.livePrices[ticker] : undefined;
+    const liveVal = (storedLive !== undefined && storedLive !== null && storedLive !== '') ? parseFloat(storedLive) : NaN;
+    const status = slateStatusInfo(liveVal, entry, maxEntry, stop);
     const company = (r['Company']||'');
     const sector = (r['Sector']||'Other').replace(/'/g,"'");
     const sectorLabel = SECTOR_COLORS[sector] ? sector : 'Other';
@@ -3463,9 +3538,22 @@ function buildSlateTable(rows, showLogBtn, T){
       + '<td class="slate-hide-mobile" style="padding:8px 8px"><span style="font-size:10px;padding:2px 7px;border-radius:4px;background:' + sectorColor + '22;color:' + sectorColor + ';font-weight:500;white-space:nowrap">' + sectorLabel + '</span></td>'
       + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.textPrimary + '">' + score.toFixed(2) + '</td>'
       + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.textPrimary + '">$' + entry.toFixed(2) + '</td>'
+      + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:#c8890a">$' + maxEntry.toFixed(2) + '</td>'
+      + '<td style="padding:8px 8px;text-align:right;color:' + T.textPrimary + '" id="deploy-cell-' + ticker + '">' + (
+          !isNaN(liveVal) && liveVal > 0
+            ? '$' + Math.round(shares * liveVal).toLocaleString() + '<div style="font-size:9px;color:' + T.textMuted + '">signal $' + capital.toLocaleString() + '</div>'
+            : '$' + capital.toLocaleString()
+        ) + '</td>'
       + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.loss + '">$' + stop.toFixed(2) + '</td>'
       + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.win + '">$' + tgt.toFixed(2) + '</td>'
       + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.textMuted + '">' + shares + '</td>'
+      + '<td style="padding:6px 8px;text-align:right">' + (showLogBtn
+          ? '<input type="number" step="0.01" placeholder="' + entry.toFixed(2) + '" value="' + (isNaN(liveVal)?'':liveVal) + '" '
+            + 'data-ticker="' + ticker + '" data-entry="' + entry + '" data-maxentry="' + maxEntry + '" data-stop="' + stop + '" data-shares="' + shares + '" '
+            + 'oninput="updateLivePrice(this)" '
+            + 'style="width:72px;font-size:12px;padding:4px 6px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.metricBg + ';color:' + T.textPrimary + ';text-align:right">'
+          : '<span style="color:' + T.textMuted + '">—</span>') + '</td>'
+      + '<td style="padding:8px 8px;text-align:center" id="status-cell-' + ticker + '">' + (showLogBtn ? statusBadgeHtml(status, T) : '<span style="color:' + T.textMuted + '">—</span>') + '</td>'
       + '<td style="padding:8px 8px;text-align:right">' + filtersBadge + '</td>'
       + '<td style="padding:8px 8px;text-align:right">' + sizingHtml + '</td>'
       + '<td style="padding:8px 8px;text-align:center">' + accelHtml + '</td>'
@@ -3486,7 +3574,6 @@ function buildSlateTable(rows, showLogBtn, T){
       + '<span>Target: <b style="color:' + T.win + '">$' + tgt.toFixed(2) + '</b></span>'
       + '<span>Shares: <b style="color:' + T.textPrimary + '">' + shares + '</b></span>'
       + '<span>Max entry: <b style="color:#c8890a">$' + maxEntry.toFixed(2) + '</b></span>'
-      + '<span>Capital: <b style="color:' + T.textPrimary + '">$' + capital + '</b></span>'
       + '<span>Risk: <b style="color:' + T.neutral + '">$' + risk + '</b></span>'
       + '<span>1W Ret: <b style="color:' + (ret1w>=0?T.win:T.loss) + '">' + (ret1w>=0?'+':'') + (ret1w*100).toFixed(1) + '%</b></span>'
       + '<span>RSI: <b style="color:' + T.textPrimary + '">' + rsi.toFixed(0) + '</b></span>'
@@ -3635,6 +3722,127 @@ function oppInitSection(){
   const btn = document.getElementById('opp-toggle');
   if(body) body.style.display = oppSectionOpen ? 'block' : 'none';
   if(btn) btn.textContent = oppSectionOpen ? 'hide ▲' : 'show ▼';
+  loadOppScanStoreFromLocal();
+  renderOppScan();
+}
+
+// ── Opportunity scanner CSV loader (opportunities_YYYY-MM-DD.csv) ──
+// Reference-only list from `main.py --opportunities` — separate from the
+// opportunisticPlays log below. Stored in localStorage only (not Firestore):
+// it's a disposable weekly scan snapshot, not trade history.
+let oppScanStore = { rows: [], date: '', filename: '' };
+
+function saveOppScanStore(){
+  try{ localStorage.setItem('oppScanStore', JSON.stringify(oppScanStore)); }catch(e){}
+}
+function loadOppScanStoreFromLocal(){
+  try{
+    const raw = localStorage.getItem('oppScanStore');
+    if(raw) oppScanStore = JSON.parse(raw);
+  }catch(e){}
+}
+
+function parseOppCSVRows(text){
+  const lines = text.trim().split('\n');
+  if(!lines.length || !lines[0].trim()) return null;
+  const headers = lines[0].split(',').map(h=>h.trim());
+  if(!headers.length) return null;
+  return lines.slice(1).map(line=>{
+    const vals = line.split(',');
+    const obj = {};
+    headers.forEach((h,i)=>{ obj[h] = (vals[i]||'').trim(); });
+    return obj;
+  }).filter(r=>r['Ticker']&&r['Score']);
+}
+
+function loadOppScanCSV(input){
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const rows = parseOppCSVRows(e.target.result);
+    if(rows === null){ alert('CSV appears empty or unreadable.'); input.value=''; return; }
+    if(!rows.length){ alert('No candidates found in this CSV.'); input.value=''; return; }
+    oppScanStore = {
+      rows,
+      date: file.name.match(/\d{4}-\d{2}-\d{2}/)?.[0] || '',
+      filename: file.name
+    };
+    saveOppScanStore();
+    renderOppScan();
+    input.value = '';
+  };
+  reader.readAsText(file);
+}
+
+function buildOppScanTable(rows, T){
+  const cols = ['Rank','Ticker','Signal','Score','3W Ret','1W Ret','Entry','Stop','Target','DV($M)','Accel','Action'];
+  let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
+    + '<thead><tr style="border-bottom:.5px solid ' + T.cardBorder + '">'
+    + cols.map(h => '<th style="text-align:' + (h==='Ticker'||h==='Signal'||h==='Action'?'left':'right') + ';padding:5px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:' + T.textMuted + ';font-weight:500">' + h + '</th>').join('')
+    + '</tr></thead><tbody>';
+
+  rows.forEach((r, idx) => {
+    const ticker = r['Ticker'] || '';
+    const signal = r['Signal'] || '';
+    const score  = parseFloat(r['Score']) || 0;
+    const ret3w  = parseFloat(r['Return 3W']) || 0;
+    const ret1w  = parseFloat(r['Return 1W']) || 0;
+    const entry  = parseFloat(r['Entry Price']) || 0;
+    const stop   = parseFloat(r['Stop Price']) || 0;
+    const tgt    = parseFloat(r['Target Price']) || 0;
+    const dv     = parseFloat(r['Avg DV ($M)']) || 0;
+    const accel  = /^(true|1|yes)$/i.test(String(r['Accel']||'').trim());
+    const rowBg  = idx % 2 === 0 ? T.cardBg : T.metricBg;
+    const rank   = parseInt(r['Rank']) || (idx + 1);
+
+    html += '<tr style="background:' + rowBg + ';border-bottom:.5px solid ' + T.cardBorder + '">'
+      + '<td style="padding:6px;text-align:right;color:' + T.textMuted + '">#' + rank + '</td>'
+      + '<td style="padding:6px;font-weight:500;color:' + T.textPrimary + '">' + escHtml(ticker) + '</td>'
+      + '<td style="padding:6px;font-size:10px;color:' + T.textMuted + '">' + escHtml(signal) + '</td>'
+      + '<td style="padding:6px;text-align:right;color:' + T.textPrimary + '">' + score.toFixed(2) + '</td>'
+      + '<td style="padding:6px;text-align:right;color:' + (ret3w>=0?T.win:T.loss) + '">' + (ret3w*100>=0?'+':'') + (ret3w*100).toFixed(1) + '%</td>'
+      + '<td style="padding:6px;text-align:right;color:' + (ret1w>=0?T.win:T.loss) + '">' + (ret1w*100>=0?'+':'') + (ret1w*100).toFixed(1) + '%</td>'
+      + '<td style="padding:6px;text-align:right;color:' + T.textPrimary + '">$' + entry.toFixed(2) + '</td>'
+      + '<td style="padding:6px;text-align:right;color:' + T.loss + '">$' + stop.toFixed(2) + '</td>'
+      + '<td style="padding:6px;text-align:right;color:' + T.win + '">$' + tgt.toFixed(2) + '</td>'
+      + '<td style="padding:6px;text-align:right;color:' + T.textMuted + '">' + dv.toFixed(0) + '</td>'
+      + '<td style="padding:6px;text-align:center">' + (accel ? '<span style="color:' + T.win + ';font-weight:600">✓</span>' : '') + '</td>'
+      + '<td style="padding:6px"><button onclick="oppPrefillFromScan(\'' + ticker + '\',' + entry + ')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">→ log</button></td>'
+      + '</tr>';
+  });
+
+  html += '</tbody></table></div>';
+  html += '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:6px;font-style:italic">Reference only — apply the manual criteria above before logging. Max $300–500 deployed, max 2 open. Clicking → log pre-fills the form below; confirm price/size before saving.</div>';
+  return html;
+}
+
+function renderOppScan(){
+  const T = THEME;
+  const outputEl = document.getElementById('opp-scan-output');
+  const labelEl = document.getElementById('opp-scan-file-label');
+  if(!outputEl || !labelEl) return;
+  if(!oppScanStore.rows || !oppScanStore.rows.length){
+    outputEl.innerHTML = '';
+    labelEl.textContent = 'No file loaded — run python3 stock_model/main.py --opportunities then load opportunities_YYYY-MM-DD.csv';
+    return;
+  }
+  labelEl.textContent = 'Loaded: ' + oppScanStore.filename + '  ·  ' + oppScanStore.rows.length + ' candidates';
+  outputEl.innerHTML = buildOppScanTable(oppScanStore.rows, T);
+}
+
+function oppPrefillFromScan(ticker, entryPrice){
+  const formEl = document.getElementById('opp-log-form');
+  if(formEl && formEl.style.display === 'none') formEl.style.display = 'block';
+  const dEl = document.getElementById('opp-in-date');
+  if(dEl && !dEl.value) dEl.value = new Date().toISOString().slice(0,10);
+  const tEl = document.getElementById('opp-in-ticker');
+  if(tEl) tEl.value = ticker;
+  const pEl = document.getElementById('opp-in-price');
+  if(pEl) pEl.value = entryPrice;
+  const depEl = document.getElementById('opp-in-deployed');
+  if(depEl && !depEl.value) depEl.value = 400;
+  if(tEl) tEl.scrollIntoView({ behavior:'smooth', block:'center' });
 }
 
 async function refreshOppPrices(){
