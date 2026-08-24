@@ -90,16 +90,14 @@ def compute_position_size_long(
     """
     Compute the number of shares to buy for a long trade under risk constraints.
 
+    V2: sizing is dollar-risk only, notional cap not applied.
+
     Logic:
         1) Compute risk_per_share = entry_price - stop_price
         2) Compute dollar_risk_cap based on:
               min(account_equity * max_risk_per_trade_pct,
                   max_dollar_risk_per_trade)
-        3) Compute shares_from_risk = dollar_risk_cap / risk_per_share
-        4) Compute notional cap:
-              max_notional = account_equity * max_notional_per_trade_pct
-              shares_from_notional = max_notional / entry_price
-        5) Final shares = floor(min(shares_from_risk, shares_from_notional))
+        3) shares = floor(dollar_risk_cap / risk_per_share)
 
     Returns 0 if position size would be less than 1 share.
     """
@@ -117,15 +115,8 @@ def compute_position_size_long(
     if dollar_risk_cap <= 0:
         return 0
 
-    # Shares allowed based on dollar risk
-    shares_from_risk = dollar_risk_cap / risk_per_share
-
-    # Notional exposure cap
-    max_notional = risk_config.account_equity * risk_config.max_notional_per_trade_pct
-    shares_from_notional = max_notional / entry_price
-
-    # Final size is the most conservative of the two
-    shares = int(math.floor(min(shares_from_risk, shares_from_notional)))
+    # V2: sizing is dollar-risk only, notional cap not applied
+    shares = int(math.floor(dollar_risk_cap / risk_per_share))
 
     if shares < 1:
         return 0

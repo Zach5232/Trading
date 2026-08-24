@@ -92,6 +92,11 @@ RISK_BOOSTED = 70.0
 FILTERS_BOOSTED_THRESHOLD = 8   # filters_passed >= this -> 2x risk sizing
 ETF_MIN_3W_RETURN = 0.01
 
+MAX_ENTRY_PREMIUM_PCT = 0.006  # 0.6% above signal price
+                                # Beyond this the edge disappears
+                                # Backtested: PF drops below 1.0
+                                # at 0.6% premium (0.15x ATR)
+
 # File paths (relative to project root)
 PROJECT_ROOT = Path(__file__).resolve().parent   # Trading/stock_model/
 DATA_DIR = PROJECT_ROOT / "Data"
@@ -255,7 +260,7 @@ def size_positions(candidates: pd.DataFrame) -> pd.DataFrame:
 # it isn't part of the spec'd order but was present in V1 output, so it's
 # kept as an additive trailing column rather than dropped.
 CANDIDATE_COLUMN_ORDER = [
-    "Rank", "Ticker", "Signal Score", "Entry Price", "Stop Price", "Target Price",
+    "Rank", "Ticker", "Signal Score", "Entry Price", "Max Entry", "Stop Price", "Target Price",
     "Shares", "Return 1W", "RSI 14", "Regime", "Sector",
     "Filters Passed", "Score Gap", "Dist 52W", "Sector ETF", "Sector ETF 3W", "Accel",
     "Company",
@@ -307,6 +312,7 @@ def save_candidates_csv(candidates: pd.DataFrame, regime: str, score_gap: float)
         "ticker": "Ticker",
         "signal_score": "Signal Score",
         "entry_price": "Entry Price",
+        "max_entry_price": "Max Entry",
         "stop_price": "Stop Price",
         "target_price": "Target Price",
         "shares": "Shares",
@@ -323,7 +329,7 @@ def save_candidates_csv(candidates: pd.DataFrame, regime: str, score_gap: float)
         "company": "Company",
     })
 
-    for col in ["Signal Score", "Entry Price", "Stop Price", "Target Price", "Return 1W", "RSI 14"]:
+    for col in ["Signal Score", "Entry Price", "Max Entry", "Stop Price", "Target Price", "Return 1W", "RSI 14"]:
         df[col] = df[col].astype(float).round(2)
     for col in ["Dist 52W", "Sector ETF 3W"]:
         df[col] = df[col].astype(float).round(4)
@@ -546,13 +552,13 @@ def save_candidate_pool(
 
 def print_candidate_table(selected: pd.DataFrame, score_gap: float) -> None:
     """Change 11: terminal output for the final selected slate."""
-    print(f"\n{'Rank':<5}{'Ticker':<8}{'Score':>7}{'Entry':>9}{'Stop':>9}{'Target':>9}{'Shares':>8}{'Filters':>9}{'Accel':>7}")
-    print("-" * 70)
+    print(f"\n{'Rank':<5}{'Ticker':<8}{'Score':>7}{'Entry':>9}{'MaxEntry':>10}{'Stop':>9}{'Target':>9}{'Shares':>8}{'Filters':>9}{'Accel':>7}")
+    print("-" * 81)
     for i, row in enumerate(selected.itertuples(), start=1):
         accel_mark = "✓" if row.f_accel else "✗"
         print(
             f"{i:<5}{row.ticker:<8}{row.signal_score:>7.2f}{row.entry_price:>9.2f}"
-            f"{row.stop_price:>9.2f}{row.target_price:>9.2f}{int(row.shares):>8}"
+            f"{row.max_entry_price:>10.2f}{row.stop_price:>9.2f}{row.target_price:>9.2f}{int(row.shares):>8}"
             f"{int(row.filters_passed):>6}/9{accel_mark:>7}"
         )
 
@@ -571,6 +577,22 @@ def print_candidate_table(selected: pd.DataFrame, score_gap: float) -> None:
         row_d = row._asdict()
         parts = " ".join(f"{name}{'✓' if row_d[flag] else '✗'}" for name, flag in flag_labels)
         print(f"{row.ticker}: {parts} ({int(row.filters_passed)}/9)")
+
+
+def print_premarket_check(selected: pd.DataFrame) -> None:
+    """Prints the pre-market (9:15am Monday/Tuesday) entry-ceiling reference table."""
+    print(">>> " + "=" * 60)
+    print(">>> PRE-MARKET CHECK (9:15am Monday or Tuesday)")
+    print(">>> " + "=" * 60)
+    print(f">>> Edge disappears at {MAX_ENTRY_PREMIUM_PCT*100:.1f}% above signal price (backtested)")
+    print(">>>")
+    print(">>> Ticker  Signal Price  Max Entry  Action if above Max Entry")
+    for row in selected.itertuples():
+        print(f">>> {row.ticker:<8}{row.entry_price:>10.2f}{row.max_entry_price:>11.2f}  SKIP — do not chase")
+    print(">>>")
+    print(">>> If price <= Max Entry at 9:15am: enter market order at 9:30am")
+    print(">>> If price > Max Entry at 9:15am: skip this candidate")
+    print(">>> Place GTC stop immediately after every fill — not optional")
 
 
 def run_daily_model(log_trades: bool = False) -> Path | None:
@@ -706,6 +728,7 @@ def run_daily_model(log_trades: bool = False) -> Path | None:
 
     # --- Change 9: stop / target recalculation + dynamic position sizing ---
     selected["entry_price"] = selected["close"]
+    selected["max_entry_price"] = (selected["entry_price"] * (1 + MAX_ENTRY_PREMIUM_PCT)).round(2)
     stop_prices, targets, shares_list = [], [], []
     for row in selected.itertuples():
         entry = float(row.entry_price)
@@ -720,7 +743,16 @@ def run_daily_model(log_trades: bool = False) -> Path | None:
         risk_per_share = max(entry - stop, 0.01)
         target = entry + 2.0 * risk_per_share
         risk_dollars = RISK_BOOSTED if row.filters_passed >= FILTERS_BOOSTED_THRESHOLD else RISK_NORMAL
-        risk_cfg = replace(RISK_CONFIG, max_dollar_risk_per_trade=risk_dollars)
+        # Override both the flat dollar cap AND the equity-percentage cap to
+        # risk_dollars — compute_position_size_long() takes min(pct-of-equity,
+        # dollar cap), so leaving max_risk_per_trade_pct at its stale 0.5%
+        # default (=$50 on a $10k account) would silently clamp RISK_BOOSTED
+        # ($70) back down to $50 via that field instead.
+        risk_cfg = replace(
+            RISK_CONFIG,
+            max_dollar_risk_per_trade=risk_dollars,
+            max_risk_per_trade_pct=risk_dollars / ACCOUNT_EQUITY,
+        )
         shares = compute_position_size_long(entry_price=entry, stop_price=stop, risk_config=risk_cfg)
         stop_prices.append(stop); targets.append(target); shares_list.append(shares)
 
@@ -743,6 +775,7 @@ def run_daily_model(log_trades: bool = False) -> Path | None:
     print(f">>> Daily candidates saved to: {out_path}")
 
     print_candidate_table(selected, score_gap)
+    print_premarket_check(selected)
 
     pool_path = save_candidate_pool(signals, selected, sector_map, company_map, universe_tickers=sp500_tickers)
     print(f">>> Candidate pool saved to: {pool_path}")
