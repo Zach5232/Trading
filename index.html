@@ -1644,13 +1644,9 @@ async function fetchPrice(ticker){
     `https://query1.finance.yahoo.com${path}`,
     `https://query2.finance.yahoo.com${path}`
   ];
-  const proxies=[
-    `https://api.allorigins.win/get?url=${encodeURIComponent(direct[0])}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(direct[0])}`,
-    `https://corsproxy.io/?${encodeURIComponent(direct[0])}`
-  ];
 
-  // Try direct endpoints first (works in some browsers/environments)
+  // Try direct endpoints first (Yahoo sends no CORS headers, so these
+  // normally reject almost instantly — cheap to try in case that changes)
   for(const url of direct){
     try{
       const r=await fetch(url,{signal:AbortSignal.timeout(3000)});
@@ -1661,21 +1657,33 @@ async function fetchPrice(ticker){
     }catch(e){}
   }
 
-  // Fall back through proxies in order
-  for(const url of proxies){
-    try{
-      const r=await fetch(url,{signal:AbortSignal.timeout(5000)});
-      if(!r.ok) continue;
-      const d=await r.json();
-      // allorigins wraps in .contents, codetabs/corsproxy return raw JSON
-      const parsed = typeof d.contents==='string' ? JSON.parse(d.contents) : d;
-      const m=parsed?.chart?.result?.[0]?.meta;
-      if(m?.regularMarketPrice||m?.previousClose)
-        return m.regularMarketPrice||m.previousClose;
-    }catch(e){}
+  // Race the CORS proxies instead of trying them one at a time — a single
+  // slow or rate-limited proxy used to block the others for up to 5s each,
+  // which is what was causing "prices unavailable" on flaky connections.
+  // corsproxy.io's anonymous endpoint was retired (403 keyless_legacy_url,
+  // confirmed 2026-08-24) — dropped rather than kept as dead weight.
+  const proxyFetch = async (url, parse) => {
+    const r = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    if(!r.ok) throw new Error('proxy http ' + r.status);
+    const d = await r.json();
+    const price = parse(d);
+    if(price == null) throw new Error('no price in response');
+    return price;
+  };
+  try{
+    return await Promise.any([
+      proxyFetch(
+        `https://api.allorigins.win/get?url=${encodeURIComponent(direct[0])}`,
+        d => { const p = JSON.parse(d.contents); const m = p?.chart?.result?.[0]?.meta; return m?.regularMarketPrice ?? m?.previousClose ?? null; }
+      ),
+      proxyFetch(
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(direct[0])}`,
+        d => { const m = d?.chart?.result?.[0]?.meta; return m?.regularMarketPrice ?? m?.previousClose ?? null; }
+      )
+    ]);
+  }catch(e){
+    return null;
   }
-
-  return null;
 }
 
 async function fetchSpyHistory(){
