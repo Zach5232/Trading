@@ -1019,10 +1019,10 @@ canvas{width:100%!important}
   <div class="ctitle">A — Running the model</div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">Every Monday morning, from the Trading directory, run:</span></div>
   <div style="position:relative;margin:.4rem 0 .85rem 34px">
-    <pre id="stock-cmd-1" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">python3 stock_model/main.py</pre>
+    <pre id="stock-cmd-1" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">python3 stock_model/main.py --opportunities</pre>
     <button onclick="copyCmd('stock-cmd-1',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
   </div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">The model scores all S&amp;P 500 stocks and applies 9 filters. Results save to <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Results/candidates/</code></span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">The model scores all S&amp;P 500 stocks and applies 9 filters. Results save to <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">Results/candidates/</code> The <code style="font-size:12px;background:rgba(255,255,255,0.07);padding:1px 5px;border-radius:4px">--opportunities</code> flag also scans R1000, MidCap, and ETF universe for Bucket 2 plays.</span></div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">Load the CSV via the "Load Monday slate" button</span></div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">If the slate shows candidates: you have trades this week</span></div>
   <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px">5</span><span style="font-size:13px">If the overlay shows a sit-out reason: no trades — archive the week and check back next Monday</span></div>
@@ -1031,18 +1031,22 @@ canvas{width:100%!important}
 <div class="card">
   <div class="ctitle">B — Reading the slate</div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Filter count badge</span><span style="font-size:12px">Shown per candidate, e.g. 8/9 or 9/9</span></div>
-  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">7/9 – 8/9 filters</span><span style="font-size:12px">Normal sizing — $35 risk per trade</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">7/9 filters</span><span style="font-size:12px">Normal sizing — $35 risk per trade</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">8/9 filters</span><span style="font-size:12px;color:#1fba85;font-weight:500">High conviction — $70 risk per trade</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">9/9 filters</span><span style="font-size:12px;color:#1fba85;font-weight:500">High conviction — $70 risk per trade</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Accel ✓</span><span style="font-size:12px">Accelerating momentum — additional conviction signal</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Max Entry Price</span><span style="font-size:12px;text-align:right">The highest price at which the trade still has edge. Backtested: edge disappears at 0.6% above signal price. If pre-market price &gt; Max Entry → skip this candidate.</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Entry window</span><span style="font-size:12px">Monday OR Tuesday only</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Wed / Thu entries</span><span style="font-size:12px">Skip — edge is weaker</span></div>
   <div class="c-filter-row" style="border-bottom:none"><span style="opacity:.6;font-size:12px">Friday</span><span style="font-size:12px;color:#e55555">Never enter — it's exit day</span></div>
+  <div style="font-size:11px;opacity:.5;margin-top:8px;line-height:1.6">Risk = maximum loss if stop hits.<br>Shares = floor(risk / (entry − stop)).<br>Example: $70 risk, $8.63 stop distance = 8 shares.</div>
 </div>
 
 <div class="card">
   <div class="ctitle">C — Entering trades (Monday 9:15–9:30am)</div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">1</span><span style="font-size:13px">At 9:15am: check pre-market price vs Entry Price in the slate</span></div>
-  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">If pre-market price &gt; Entry Price: skip that candidate</span></div>
+  <div class="c-gate-row"><span style="font-size:16px;min-width:24px">2</span><span style="font-size:13px">If pre-market price &gt; Max Entry Price: skip that candidate — edge disappears at 0.6% above signal price</span></div>
+  <div style="font-size:11px;opacity:.5;margin:0 0 .3rem 34px">Max Entry = Entry Price × 1.006 (data-backed threshold)</div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">3</span><span style="font-size:13px">At 9:30am: market order for candidates trading below entry price</span></div>
   <div class="c-gate-row"><span style="font-size:16px;min-width:24px">4</span><span style="font-size:13px">Immediately after fill: place a GTC stop-loss at Stop Price</span></div>
   <div class="c-gate-row" style="border-bottom:none"><span style="font-size:16px;min-width:24px">5</span><span style="font-size:13px">Log the trade in the dashboard with your actual fill price</span></div>
@@ -1060,10 +1064,20 @@ canvas{width:100%!important}
 <div class="card" style="border-left:3px solid #e5a020">
   <div class="ctitle">E — Opportunistic plays (Bucket 2)</div>
   <div style="font-size:12px;opacity:.6;margin-bottom:8px">Separate from the systematic model. Tracked independently — never mixed with systematic results.</div>
-  <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Criteria</span><span style="font-size:12px;text-align:right">3W return ≥ 20%, accelerating, volume confirmed, not within 5% of 52W high, $ volume &gt; $100M/day</span></div>
-  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Size</span><span style="font-size:12px">Fixed $300–500 deployed — not risk-based</span></div>
+
+  <div style="font-size:12px;margin-bottom:6px">How the scanner works: run the command below. The scanner checks R1000, MidCap, and ETF universe after the V2 model runs. Two signals fire candidates:</div>
+  <div style="position:relative;margin:.4rem 0 .85rem 0">
+    <pre id="stock-cmd-opp" style="background:#111;border:.5px solid rgba(255,255,255,0.1);border-radius:8px;padding:.75rem 1rem;font-size:12px;font-family:'SF Mono',Menlo,monospace;color:#1fba85;overflow-x:auto;white-space:pre;margin:0">python3 stock_model/main.py --opportunities</pre>
+    <button onclick="copyCmd('stock-cmd-opp',this)" style="position:absolute;top:8px;right:8px;font-size:10px;padding:3px 8px;border-radius:5px;border:.5px solid rgba(255,255,255,0.15);cursor:pointer;background:rgba(255,255,255,0.07);color:rgba(255,255,255,0.6)">copy</button>
+  </div>
+
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Signal 1 — MOMENTUM</span><span style="font-size:12px;text-align:right">3W return ≥ 30% + accelerating + dv &gt; $50M/day</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Signal 2 — VOLUME_BREAK</span><span style="font-size:12px;text-align:right">Volume surge ≥ 5x normal + 3W ≥ 10% + dv &gt; $50M/day</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Manual criteria</span><span style="font-size:12px;text-align:right">3W return ≥ 20%, accelerating, volume confirmed, not within 5% of 52W high, $ volume &gt; $100M/day</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Size</span><span style="font-size:12px">$300–500 deployed fixed (not risk-based)</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Max open</span><span style="font-size:12px">2 at any time</span></div>
-  <div class="c-filter-row" style="border-bottom:none"><span style="opacity:.6;font-size:12px">Exit</span><span style="font-size:12px">No mandatory Friday exit — hold until thesis breaks</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Exit</span><span style="font-size:12px">No mandatory Friday exit — hold until thesis breaks</span></div>
+  <div class="c-filter-row" style="border-bottom:none"><span style="opacity:.6;font-size:12px">P&amp;L</span><span style="font-size:12px">Separate P&amp;L — never mixed with V2 systematic results</span></div>
 </div>
 
 <div class="card">
