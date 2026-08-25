@@ -348,6 +348,8 @@ canvas{width:100%!important}
 <!-- ── MAIN TAB NAV ── -->
 <div id="main-tab-nav" style="display:flex;gap:6px;margin-bottom:.4rem;overflow-x:auto;padding-bottom:2px">
   <button id="tab-btn-dashboard" class="tab-btn active" onclick="showMainTab('dashboard')" style="white-space:nowrap">📊 Dashboard</button>
+  <button id="tab-btn-opportunities" class="tab-btn" onclick="showMainTab('opportunities')" style="white-space:nowrap">🎯 Opportunities</button>
+  <button id="tab-btn-overall" class="tab-btn" onclick="showMainTab('overall')" style="white-space:nowrap">🧮 Overall</button>
   <button id="tab-btn-execute" class="tab-btn" onclick="showMainTab('execute')" style="white-space:nowrap">⚡ Execute</button>
   <button id="tab-btn-howto" class="tab-btn" onclick="showMainTab('howto')" style="white-space:nowrap">📖 How to Use</button>
   <button id="more-nav-btn" class="tab-btn" onclick="toggleMoreDropdown(event)" style="white-space:nowrap">More ▾</button>
@@ -443,58 +445,6 @@ canvas{width:100%!important}
   <div class="metric metric-slim"><div class="lbl">Streak</div><div class="val" id="m-streak">—</div><div class="sub" id="m-streak-sub">no trades yet</div></div>
   <div class="metric metric-slim"><div class="lbl">Profit Factor</div><div class="val" id="m-pf">—</div><div class="sub" id="m-pf-sub">gross W / gross L</div></div>
   <div class="metric metric-slim"><div class="lbl">Max Drawdown</div><div class="val" id="m-dd">—</div><div class="sub" id="m-dd-sub">peak to trough</div></div>
-</div>
-
-<!-- ══════════════════════════════════════
-     3b — OPPORTUNISTIC PLAYS (Bucket 2)
-     Separate from the systematic model — never mixed into
-     systematic P&L or performance metrics.
-     ══════════════════════════════════════ -->
-
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Bucket 2</div>
-<div class="card" id="opp-plays-card">
-  <div class="card-hdr">
-    <div class="ctitle">🎯 Opportunistic plays — open</div>
-    <button class="toggle-btn" id="opp-toggle" onclick="oppToggleSection()">hide ▲</button>
-  </div>
-  <div id="opp-body">
-
-    <div id="opp-overdue-banner"></div>
-    <div class="ctitle" style="margin-bottom:.5rem">Open plays</div>
-    <div id="opp-open-list" style="margin-bottom:.85rem"><div style="font-size:13px;opacity:.5">No open plays</div></div>
-
-    <!-- Log-new-play form + scan loader live on the Execute tab now —
-         this card is the daily "what's open + how much longer" glance. -->
-    <details style="margin-top:1rem">
-      <summary style="font-size:12px;cursor:pointer;opacity:.7">Past plays ▾</summary>
-      <div id="opp-closed-list" style="margin-top:.6rem"></div>
-    </details>
-
-  </div>
-</div>
-
-<!-- Bucket 2 performance breakout — its own stat cards + equity curve,
-     computed only from opportunisticPlays, never touching trades[]/closed[]
-     or the systematic m-pnl/m-wr/m-pf/m-dd calculations. -->
-<div class="card" style="margin-bottom:1rem">
-  <div class="card-hdr">
-    <div>
-      <div class="ctitle" style="margin-bottom:2px">📊 Bucket 2 performance</div>
-      <div style="font-size:11px;opacity:.5">Separate from systematic results — never blended into the metrics above</div>
-    </div>
-  </div>
-  <div class="grid-4" style="margin-bottom:.75rem">
-    <div class="metric metric-slim"><div class="lbl">Total P&amp;L</div><div class="val" id="opp-m-pnl">—</div><div class="sub" id="opp-m-deployed">$0 deployed now</div></div>
-    <div class="metric metric-slim"><div class="lbl">Win rate</div><div class="val" id="opp-m-wr">—</div><div class="sub" id="opp-m-wl">0W / 0L</div></div>
-    <div class="metric metric-slim"><div class="lbl">Profit Factor</div><div class="val" id="opp-m-pf">—</div><div class="sub" id="opp-m-pf-sub">gross W / gross L</div></div>
-    <div class="metric metric-slim"><div class="lbl">Max Drawdown</div><div class="val" id="opp-m-dd">—</div><div class="sub">peak to trough ($)</div></div>
-  </div>
-  <div class="card-hdr" style="margin-bottom:.4rem">
-    <div class="ctitle" style="margin-bottom:0">Bucket 2 equity curve</div>
-    <div style="font-size:11px;text-align:right" id="opp-eq-vs-start">—</div>
-  </div>
-  <div style="position:relative;height:140px"><canvas id="opp-eq-chart"></canvas></div>
-  <div style="font-size:11px;opacity:.5;margin-top:6px;text-align:center" id="opp-eq-empty">No closed plays yet — this fills in as Bucket 2 trades close.</div>
 </div>
 
 <!-- ══════════════════════════════════════
@@ -653,6 +603,127 @@ canvas{width:100%!important}
 </div>
 
 </div><!-- /main-dashboard -->
+
+<!-- ════════════════════════════════════════════════════
+     OPPORTUNITIES TAB (Bucket 2's own dashboard)
+     Mirrors the Dashboard tab's depth for the systematic
+     model, scoped to opportunisticPlays only. Never reads
+     trades[]/closed[], never written into by systematic
+     render functions. Loading a scan / logging a new play
+     still happens on Execute — this tab is for viewing.
+     ════════════════════════════════════════════════════ -->
+<div id="main-opportunities" style="display:none">
+
+<div class="hdr">
+  <div><span style="font-size:18px;font-weight:500">🎯 Opportunities — Bucket 2</span></div>
+</div>
+<div class="tagline">Separate from the systematic model — see the Overall tab for combined numbers</div>
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Open plays</div>
+<div class="card" id="opp-plays-card">
+  <div class="card-hdr">
+    <div class="ctitle">🎯 Opportunistic plays — open</div>
+    <button class="toggle-btn" id="opp-toggle" onclick="oppToggleSection()">hide ▲</button>
+  </div>
+  <div id="opp-body">
+    <div id="opp-overdue-banner"></div>
+    <div id="opp-open-list"><div style="font-size:13px;opacity:.5">No open plays</div></div>
+  </div>
+</div>
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Performance</div>
+<div class="card" style="margin-bottom:1rem">
+  <div class="grid-4" style="margin-bottom:.75rem">
+    <div class="metric metric-slim"><div class="lbl">Total P&amp;L</div><div class="val" id="opp-m-pnl">—</div><div class="sub" id="opp-m-deployed">$0 deployed now</div></div>
+    <div class="metric metric-slim"><div class="lbl">Win rate</div><div class="val" id="opp-m-wr">—</div><div class="sub" id="opp-m-wl">0W / 0L</div></div>
+    <div class="metric metric-slim"><div class="lbl">Profit Factor</div><div class="val" id="opp-m-pf">—</div><div class="sub" id="opp-m-pf-sub">gross W / gross L</div></div>
+    <div class="metric metric-slim"><div class="lbl">Max Drawdown</div><div class="val" id="opp-m-dd">—</div><div class="sub">peak to trough ($)</div></div>
+  </div>
+  <div class="card-hdr" style="margin-bottom:.4rem">
+    <div class="ctitle" style="margin-bottom:0">Bucket 2 equity curve</div>
+    <div style="font-size:11px;text-align:right" id="opp-eq-vs-start">—</div>
+  </div>
+  <div style="position:relative;height:140px"><canvas id="opp-eq-chart"></canvas></div>
+  <div style="font-size:11px;opacity:.5;margin-top:6px;text-align:center" id="opp-eq-empty">No closed plays yet — this fills in as Bucket 2 trades close.</div>
+</div>
+
+<div class="grid-2">
+  <div class="card" style="margin-bottom:0">
+    <div class="ctitle">Hall of fame</div>
+    <div id="opp-hof-list"><div style="font-size:13px">No closed plays yet.</div></div>
+  </div>
+  <div class="card" style="margin-bottom:0">
+    <div class="card-hdr">
+      <div>
+        <div class="ctitle" style="margin-bottom:4px">% Return distribution</div>
+        <div id="opp-dist-sub" style="font-size:12px;font-style:italic">—</div>
+      </div>
+    </div>
+    <div style="position:relative;height:130px"><canvas id="opp-dist-chart"></canvas></div>
+  </div>
+</div>
+<div style="margin-bottom:1rem"></div>
+
+<div class="card">
+  <div class="card-hdr"><div class="ctitle">Trade history</div><button class="rbtn" onclick="exportOppHistoryCSV()">Export CSV</button></div>
+  <div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+    <div id="opp-hist-list" style="min-width:480px"><div style="font-size:13px">Closed plays appear here.</div></div>
+  </div>
+</div>
+
+<div style="font-size:11px;opacity:.4;margin:.5rem 0 1rem;text-align:center">
+  Sector breakdown, win-rate-by-exit-day, and win-rate-by-score aren't shown here — Bucket 2 plays don't carry sector data, don't exit on a fixed schedule, and aren't gated on a score threshold the way the systematic model is.
+</div>
+
+</div><!-- /main-opportunities -->
+
+<!-- ════════════════════════════════════════════════════
+     OVERALL TAB — combined systematic + Bucket 2
+     Every number here is a $-blend of trades[]/closed[]
+     (systematic) and opportunisticPlays (Bucket 2). Never
+     the source of truth for either bucket on its own —
+     Dashboard and Opportunities remain the real per-bucket
+     numbers this rolls up.
+     ════════════════════════════════════════════════════ -->
+<div id="main-overall" style="display:none">
+
+<div class="hdr">
+  <div><span style="font-size:18px;font-weight:500">🧮 Overall — combined</span></div>
+</div>
+<div class="tagline">Systematic + Bucket 2, blended in dollars — this is the number that reflects total capital at risk</div>
+
+<div class="grid-4" style="margin-bottom:.75rem">
+  <div class="metric metric-slim"><div class="lbl">Total P&amp;L</div><div class="val" id="ov-m-pnl">—</div><div class="sub" id="ov-m-split">sys $0 · bucket2 $0</div></div>
+  <div class="metric metric-slim"><div class="lbl">Win rate</div><div class="val" id="ov-m-wr">—</div><div class="sub" id="ov-m-wl">0W / 0L</div></div>
+  <div class="metric metric-slim"><div class="lbl">Profit Factor</div><div class="val" id="ov-m-pf">—</div><div class="sub" id="ov-m-pf-sub">gross W / gross L</div></div>
+  <div class="metric metric-slim"><div class="lbl">Max Drawdown</div><div class="val" id="ov-m-dd">—</div><div class="sub">peak to trough ($)</div></div>
+</div>
+<div class="grid-2" style="margin-bottom:1rem">
+  <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
+    <div class="lbl">Total deployed right now</div>
+    <div class="val" id="ov-m-deployed">$0</div>
+    <div class="sub" id="ov-m-deployed-sub">systematic + Bucket 2 open positions</div>
+  </div>
+  <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
+    <div class="lbl">Trades counted</div>
+    <div class="val" id="ov-m-count">0</div>
+    <div class="sub" id="ov-m-count-sub">closed, both buckets</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-hdr">
+    <div>
+      <div class="ctitle" style="margin-bottom:4px">Combined equity curve</div>
+      <div style="font-size:11px;opacity:.5">Every closed trade from both buckets, merged by close date, cumulative $</div>
+    </div>
+    <div style="font-size:11px;text-align:right" id="ov-eq-vs-start">—</div>
+  </div>
+  <div style="position:relative;height:160px"><canvas id="ov-eq-chart"></canvas></div>
+  <div style="font-size:11px;opacity:.5;margin-top:6px;text-align:center" id="ov-eq-empty">No closed trades yet in either bucket.</div>
+</div>
+
+</div><!-- /main-overall -->
 
 <!-- ════════════════════════════════════════════════════
      EXECUTE TAB
@@ -4256,23 +4327,257 @@ function renderOppOpenList(){
   }).join('');
 }
 
+// Bucket 2 "Trade history" table (Opportunities tab) — replaces the old
+// compact opp-closed-list widget with a full sortable table + CSV export,
+// matching the systematic Trade History card's shape.
+function oppReturnPct(p){
+  return p.entryPrice > 0 ? ((p.exitPrice - p.entryPrice) / p.entryPrice) * 100 : 0;
+}
+
 function renderOppClosedList(){
   const T = THEME;
-  const el = document.getElementById('opp-closed-list');
+  const el = document.getElementById('opp-hist-list');
   if(!el) return;
   const closed = opportunisticPlays.filter(p => p.status === 'closed')
     .sort((a,b) => new Date(b.exitDate||0) - new Date(a.exitDate||0));
   if(!closed.length){ el.innerHTML = '<div style="font-size:13px;color:' + T.textMuted + '">No closed plays yet.</div>'; return; }
-  el.innerHTML = closed.map(p => {
-    const pnlColor = (p.realizedPnl||0) >= 0 ? T.win : T.loss;
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:.5px solid ' + T.cardBorder + ';font-size:12px;gap:8px">'
-      + '<div style="flex:1;min-width:0">'
-      + '<div style="font-weight:500;color:' + T.textPrimary + '">' + escHtml(p.ticker) + ' <span style="font-weight:400;color:' + T.textMuted + ';font-size:11px">' + escHtml(p.entryDate||'') + ' → ' + escHtml(p.exitDate||'') + '</span></div>'
-      + (p.notes ? '<div style="font-size:11px;color:' + T.textMuted + ';font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(p.notes) + '</div>' : '')
-      + '</div>'
-      + '<span style="color:' + pnlColor + ';font-weight:500;flex-shrink:0">' + fmtP(p.realizedPnl||0) + '</span>'
-      + '</div>';
+
+  const rows = closed.map(p => {
+    const pnl = p.realizedPnl||0;
+    const pnlColor = pnl >= 0 ? T.win : T.loss;
+    const pct = oppReturnPct(p);
+    return '<tr style="border-bottom:.5px solid ' + T.cardBorder + '">'
+      + '<td style="padding:6px 6px;font-size:12px;font-weight:500;color:' + T.textPrimary + '">' + escHtml(p.ticker) + '</td>'
+      + '<td style="padding:6px 6px;font-size:12px;color:' + T.textMuted + '">' + escHtml(p.entryDate||'') + ' → ' + escHtml(p.exitDate||'') + '</td>'
+      + '<td style="padding:6px 6px;font-size:12px;color:' + T.textPrimary + '">$' + (p.entryPrice||0).toFixed(2) + ' → $' + (p.exitPrice||0).toFixed(2) + '</td>'
+      + '<td style="padding:6px 6px;font-size:12px;color:' + T.textMuted + '">$' + (p.deployed||0).toFixed(0) + '</td>'
+      + '<td style="padding:6px 6px;font-size:12px;color:' + pnlColor + '">' + (pct>=0?'+':'') + pct.toFixed(1) + '%</td>'
+      + '<td style="padding:6px 6px;font-size:12px;color:' + pnlColor + ';font-weight:500">' + fmtP(pnl) + '</td>'
+      + '</tr>';
   }).join('');
+
+  el.innerHTML = '<table style="width:100%;border-collapse:collapse">'
+    + '<thead><tr style="border-bottom:.5px solid ' + T.cardBorder + '">'
+    + ['Ticker','Entry → Exit','Price','Deployed','% Return','P&L'].map(h =>
+        '<th style="text-align:left;padding:5px 6px;font-size:10px;font-weight:500;color:' + T.textMuted + ';text-transform:uppercase;letter-spacing:.04em">' + h + '</th>').join('')
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+
+function exportOppHistoryCSV(){
+  const closed = opportunisticPlays.filter(p => p.status === 'closed');
+  if(!closed.length){ alert('No closed Bucket 2 plays to export yet.'); return; }
+  const cols = ['ticker','entryDate','entryPrice','exitDate','exitPrice','deployed','realizedPnl','notes'];
+  const esc = v => '"' + String(v??'').replace(/"/g,'""') + '"';
+  const rows = [cols.join(','), ...closed.map(p => cols.map(c => esc(p[c])).join(','))];
+  const blob = new Blob([rows.join('\n')], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'bucket2_trade_history_' + new Date().toISOString().slice(0,10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+// Bucket 2 Hall of Fame — best/worst $ trade + best % return, mirrors the
+// systematic renderHOF() shape (Best R -> Best % Return, since Bucket 2
+// isn't risk-based).
+function renderOppHOF(){
+  const T = THEME;
+  const el = document.getElementById('opp-hof-list');
+  if(!el) return;
+  const closed = opportunisticPlays.filter(p => p.status === 'closed');
+  if(!closed.length){ el.innerHTML = '<div style="font-size:13px">No closed plays yet.</div>'; return; }
+  const best = [...closed].sort((a,b) => (b.realizedPnl||0) - (a.realizedPnl||0))[0];
+  const worst = [...closed].sort((a,b) => (a.realizedPnl||0) - (b.realizedPnl||0))[0];
+  const bestPct = [...closed].sort((a,b) => oppReturnPct(b) - oppReturnPct(a))[0];
+  el.innerHTML = [
+    { label: 'Best trade', p: best, val: fmtP(best.realizedPnl||0), color: T.win },
+    { label: 'Worst trade', p: worst, val: fmtP(worst.realizedPnl||0), color: T.loss },
+    { label: 'Best % return', p: bestPct, val: (oppReturnPct(bestPct)>=0?'+':'') + oppReturnPct(bestPct).toFixed(1) + '%', color: T.win },
+  ].map(row =>
+    '<div class="hof-row"><div><div style="font-size:11px;color:' + T.textMuted + '">' + row.label + '</div>'
+    + '<div style="font-weight:500">' + escHtml(row.p.ticker) + ' <span style="font-size:12px;color:' + T.textMuted + ';font-weight:400">' + escHtml(row.p.exitDate||'') + '</span></div></div>'
+    + '<div style="font-size:16px;font-weight:500;color:' + row.color + '">' + row.val + '</div></div>'
+  ).join('');
+}
+
+// Bucket 2 "% Return Distribution" — adapted from the systematic R
+// Distribution bar chart. Buckets scaled to Bucket 2's typical magnitude
+// (20%+ entry criteria) rather than R-multiples, which don't apply here.
+let oppDistChart = null;
+function buildOppReturnDistChart(){
+  const canvas = document.getElementById('opp-dist-chart');
+  const subEl = document.getElementById('opp-dist-sub');
+  if(!canvas) return;
+  const closed = opportunisticPlays.filter(p => p.status === 'closed');
+  if(!closed.length){
+    if(oppDistChart){ oppDistChart.destroy(); oppDistChart = null; }
+    if(subEl) subEl.textContent = 'No closed plays yet.';
+    return;
+  }
+  const bucketLabels = ['< -10%','-10 to 0%','0 to +10%','+10 to +20%','> +20%'];
+  const counts = [0,0,0,0,0];
+  closed.forEach(p => {
+    const pct = oppReturnPct(p);
+    if(pct < -10) counts[0]++;
+    else if(pct < 0) counts[1]++;
+    else if(pct < 10) counts[2]++;
+    else if(pct < 20) counts[3]++;
+    else counts[4]++;
+  });
+  const colors = [THEME.loss, THEME.loss+'99', THEME.neutral+'99', THEME.win+'99', THEME.win];
+  if(oppDistChart){ oppDistChart.destroy(); oppDistChart = null; }
+  oppDistChart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: bucketLabels, datasets: [{ label: 'Plays', data: counts, backgroundColor: colors, borderRadius: 4, borderSkipped: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => { const n=c.parsed.y; const pct=closed.length?Math.round(n/closed.length*100):0; return n+' play'+(n!==1?'s':'')+' ('+pct+'%)'; } } },
+      },
+      scales: {
+        x: { ticks: { font:{size:11}, color: THEME.textMuted }, grid: { display:false } },
+        y: { grid: { color: THEME.chartGridColor }, ticks: { font:{size:10}, color: THEME.textMuted, stepSize:1 }, beginAtZero:true },
+      },
+    },
+  });
+  const avgPct = closed.reduce((s,p) => s + oppReturnPct(p), 0) / closed.length;
+  if(subEl) subEl.textContent = 'avg ' + (avgPct>=0?'+':'') + avgPct.toFixed(1) + '% return';
+}
+
+// ── Overall tab: systematic + Bucket 2 blended in dollars. ──
+// Read-only rollup — never the source of truth for either bucket, and
+// never written back into trades[]/closed[]/opportunisticPlays. Combines
+// closed[].pnl (systematic, $) with opportunisticPlays' realizedPnl ($) by
+// treating every closed trade from both buckets as one pool of dollar
+// outcomes, since Bucket 2 has no R-multiple to blend on equal terms.
+function renderOverallMetrics(){
+  const T = THEME;
+  const sysClosed = closed || [];
+  const oppClosed = opportunisticPlays.filter(p => p.status === 'closed');
+  const sysPnls = sysClosed.map(t => t.pnl||0);
+  const oppPnls = oppClosed.map(p => p.realizedPnl||0);
+  const allPnls = [...sysPnls, ...oppPnls];
+  const tot = allPnls.length;
+
+  const sysTotal = sysPnls.reduce((s,v) => s+v, 0);
+  const oppTotal = oppPnls.reduce((s,v) => s+v, 0);
+  const totalPnl = sysTotal + oppTotal;
+
+  const pnlEl = document.getElementById('ov-m-pnl');
+  if(pnlEl){ pnlEl.textContent = tot ? fmtP(totalPnl) : '—'; pnlEl.style.color = totalPnl >= 0 ? T.win : T.loss; }
+  const splitEl = document.getElementById('ov-m-split');
+  if(splitEl) splitEl.textContent = 'sys ' + fmtP(sysTotal) + ' · bucket2 ' + fmtP(oppTotal);
+
+  const wins = allPnls.filter(v => v > 0).length;
+  const losses = tot - wins;
+  const wrEl = document.getElementById('ov-m-wr');
+  if(wrEl){ wrEl.textContent = tot ? Math.round(wins/tot*100) + '%' : '—'; wrEl.style.color = tot ? (wins/tot >= 0.5 ? T.win : T.loss) : T.textPrimary; }
+  const wlEl = document.getElementById('ov-m-wl');
+  if(wlEl) wlEl.textContent = wins + 'W / ' + losses + 'L';
+
+  const grossW = allPnls.filter(v => v > 0).reduce((s,v) => s+v, 0);
+  const grossL = Math.abs(allPnls.filter(v => v <= 0).reduce((s,v) => s+v, 0));
+  const pf = tot ? (grossL > 0 ? (grossW/grossL).toFixed(2) : '∞') : '—';
+  const pfEl = document.getElementById('ov-m-pf');
+  if(pfEl){ pfEl.textContent = pf; pfEl.style.color = !tot ? T.textPrimary : parseFloat(pf) >= 1.3 ? T.win : parseFloat(pf) >= 1.0 ? T.neutral : T.loss; }
+  const pfSubEl = document.getElementById('ov-m-pf-sub');
+  if(pfSubEl) pfSubEl.textContent = tot ? '$' + grossW.toFixed(0) + 'W / $' + grossL.toFixed(0) + 'L' : 'gross W / gross L';
+
+  // Total currently deployed — same formula render() uses for wk-deployed-sub,
+  // plus Bucket 2's open-plays deployed sum.
+  const sysDeployed = (trades||[]).reduce((s,t) => s + t.entry*t.shares, 0);
+  const oppOpen = opportunisticPlays.filter(p => p.status === 'open');
+  const oppDeployed = oppOpen.reduce((s,p) => s + (p.deployed||0), 0);
+  const deployEl = document.getElementById('ov-m-deployed');
+  if(deployEl) deployEl.textContent = '$' + Math.round(sysDeployed + oppDeployed).toLocaleString();
+  const deploySubEl = document.getElementById('ov-m-deployed-sub');
+  if(deploySubEl) deploySubEl.textContent = 'sys $' + Math.round(sysDeployed).toLocaleString() + ' (' + (trades||[]).length + ') · bucket2 $' + Math.round(oppDeployed).toLocaleString() + ' (' + oppOpen.length + ')';
+
+  const countEl = document.getElementById('ov-m-count');
+  if(countEl) countEl.textContent = tot;
+  const countSubEl = document.getElementById('ov-m-count-sub');
+  if(countSubEl) countSubEl.textContent = sysClosed.length + ' systematic · ' + oppClosed.length + ' bucket2';
+
+  // Max drawdown — dollar peak-to-trough on the combined chronological
+  // equity sequence (same merge buildOverallEquityChart() uses).
+  const merged = [
+    ...sysClosed.filter(t => t.closeDate).map(t => ({ date: t.closeDate, pnl: t.pnl||0 })),
+    ...oppClosed.filter(p => p.exitDate).map(p => ({ date: p.exitDate, pnl: p.realizedPnl||0 })),
+  ].sort((a,b) => new Date(a.date) - new Date(b.date));
+  let cur = 0, peak = 0, maxDD = 0;
+  merged.forEach(x => { cur += x.pnl; if(cur > peak) peak = cur; const dd = peak - cur; if(dd > maxDD) maxDD = dd; });
+  const ddEl = document.getElementById('ov-m-dd');
+  if(ddEl){ ddEl.textContent = tot ? '-$' + maxDD.toFixed(0) : '—'; ddEl.style.color = maxDD > 400 ? T.loss : maxDD > 150 ? T.neutral : T.textPrimary; }
+}
+
+let ovEqChart = null;
+function buildOverallEquityChart(){
+  const T = THEME;
+  const canvas = document.getElementById('ov-eq-chart');
+  if(!canvas) return;
+
+  const sysClosed = (closed || []).filter(t => t.closeDate).map(t => ({ date: t.closeDate, pnl: t.pnl||0 }));
+  const oppClosed = opportunisticPlays.filter(p => p.status === 'closed' && p.exitDate).map(p => ({ date: p.exitDate, pnl: p.realizedPnl||0 }));
+  const merged = [...sysClosed, ...oppClosed].sort((a,b) => new Date(a.date) - new Date(b.date));
+
+  const emptyEl = document.getElementById('ov-eq-empty');
+  if(!merged.length){
+    if(emptyEl) emptyEl.style.display = 'block';
+    canvas.style.display = 'none';
+    const vsEl = document.getElementById('ov-eq-vs-start');
+    if(vsEl) vsEl.textContent = '—';
+    if(ovEqChart){ ovEqChart.destroy(); ovEqChart = null; }
+    return;
+  }
+  if(emptyEl) emptyEl.style.display = 'none';
+  canvas.style.display = '';
+
+  const pts = [{ label: 'Start', equity: 0 }];
+  let cur = 0;
+  merged.forEach(x => { cur += x.pnl; pts.push({ label: (x.date||'').slice(5), equity: Math.round(cur*100)/100 }); });
+
+  const labels = pts.map(p => p.label);
+  const equities = pts.map(p => p.equity);
+  const final = equities[equities.length-1];
+
+  const vsEl = document.getElementById('ov-eq-vs-start');
+  if(vsEl){ vsEl.textContent = (final>=0?'+':'') + '$' + final.toFixed(2) + ' total'; vsEl.style.color = final>=0 ? T.win : T.loss; }
+
+  if(ovEqChart){ ovEqChart.destroy(); ovEqChart = null; }
+  ovEqChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Combined cumulative P&L',
+        data: equities,
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: equities.map(v => v >= 0 ? T.chartLineUp : T.chartLineDown),
+        fill: false,
+        tension: 0.1,
+        segment: { borderColor: ctx => ctx.p1.parsed.y >= 0 ? T.chartLineUp : T.chartLineDown },
+      }],
+    },
+    options: {
+      animation: false, responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: T.cardBg, titleColor: T.textMuted, bodyColor: T.textPrimary,
+          borderColor: T.cardBorder, borderWidth: 1,
+          callbacks: { label: ctx => 'Cumulative: ' + fmtP(ctx.parsed.y) },
+        },
+      },
+      scales: {
+        x: { grid: { color: T.chartGridColor }, ticks: { color: T.textMuted } },
+        y: { position: 'right', grid: { color: T.chartGridColor }, ticks: { color: T.textMuted, callback: v => '$' + v.toFixed(0) } },
+      },
+    },
+  });
 }
 
 function renderOpportunisticPlays(){
@@ -4281,6 +4586,10 @@ function renderOpportunisticPlays(){
   renderOppClosedList();
   renderOppMetrics();
   buildOppEquityChart();
+  renderOppHOF();
+  buildOppReturnDistChart();
+  renderOverallMetrics();
+  buildOverallEquityChart();
 }
 
 // ── Bucket 2 performance breakout — own stat cards, own equity curve.
@@ -4667,16 +4976,22 @@ document.addEventListener('click', function(e) {
 let _mainTab = 'dashboard';
 function showMainTab(tab) {
   _mainTab = tab;
-  document.getElementById('main-dashboard').style.display = tab === 'dashboard' ? '' : 'none';
-  document.getElementById('main-execute').style.display   = tab === 'execute'   ? '' : 'none';
-  document.getElementById('main-crypto').style.display    = tab === 'crypto'    ? '' : 'none';
-  document.getElementById('main-howto').style.display     = tab === 'howto'     ? '' : 'none';
-  document.getElementById('tab-btn-dashboard').classList.toggle('active', tab === 'dashboard');
-  document.getElementById('tab-btn-execute').classList.toggle('active',  tab === 'execute');
-  document.getElementById('tab-btn-crypto').classList.toggle('active',   tab === 'crypto');
-  document.getElementById('tab-btn-howto').classList.toggle('active',    tab === 'howto');
-  if (tab === 'crypto')  { applyThemeCrypto(); buildCryptoEquityChart(); }
-  if (tab === 'execute') { renderCandidatePool(); }
+  document.getElementById('main-dashboard').style.display     = tab === 'dashboard'     ? '' : 'none';
+  document.getElementById('main-opportunities').style.display = tab === 'opportunities' ? '' : 'none';
+  document.getElementById('main-overall').style.display       = tab === 'overall'       ? '' : 'none';
+  document.getElementById('main-execute').style.display       = tab === 'execute'       ? '' : 'none';
+  document.getElementById('main-crypto').style.display        = tab === 'crypto'        ? '' : 'none';
+  document.getElementById('main-howto').style.display         = tab === 'howto'         ? '' : 'none';
+  document.getElementById('tab-btn-dashboard').classList.toggle('active',     tab === 'dashboard');
+  document.getElementById('tab-btn-opportunities').classList.toggle('active', tab === 'opportunities');
+  document.getElementById('tab-btn-overall').classList.toggle('active',       tab === 'overall');
+  document.getElementById('tab-btn-execute').classList.toggle('active',       tab === 'execute');
+  document.getElementById('tab-btn-crypto').classList.toggle('active',       tab === 'crypto');
+  document.getElementById('tab-btn-howto').classList.toggle('active',        tab === 'howto');
+  if (tab === 'crypto')        { applyThemeCrypto(); buildCryptoEquityChart(); }
+  if (tab === 'execute')       { renderCandidatePool(); }
+  if (tab === 'opportunities') { renderOpportunisticPlays(); }
+  if (tab === 'overall')       { renderOverallMetrics(); buildOverallEquityChart(); }
 }
 
 function applyThemeCrypto() {
