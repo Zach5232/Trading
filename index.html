@@ -807,7 +807,7 @@ canvas{width:100%!important}
       <div><span style="color:#1fba85">✓</span> Momentum accelerating (1W &gt; 3W trend)</div>
       <div><span style="color:#1fba85">✓</span> Volume above average</div>
       <div><span style="color:#1fba85">✓</span> Not within 5% of 52W high</div>
-      <div><span style="color:#1fba85">✓</span> Dollar volume &gt; $100M/day</div>
+      <div><span style="color:#1fba85">✓</span> Dollar volume &gt; $10M/day</div>
       <div><span style="color:#1fba85">✓</span> Sized by tier: 1.5% / 1.0% / 0.5% of your trading bankroll cap (STRONG/SOLID/WATCH) — editable per trade</div>
       <div><span style="color:#1fba85">✓</span> Maximum hold: 3 weeks — exit regardless of P&amp;L</div>
       <div><span style="color:#1fba85">✓</span> Exit early if stop hits or thesis breaks</div>
@@ -1210,7 +1210,7 @@ canvas{width:100%!important}
 
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Signal 1 — MOMENTUM</span><span style="font-size:12px;text-align:right">3W return ≥ 30% + accelerating + dv &gt; $50M/day</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Signal 2 — VOLUME_BREAK</span><span style="font-size:12px;text-align:right">Volume surge ≥ 5x normal + 3W ≥ 10% + dv &gt; $50M/day</span></div>
-  <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Manual criteria</span><span style="font-size:12px;text-align:right">3W return ≥ 20%, accelerating, volume confirmed, not within 5% of 52W high, $ volume &gt; $100M/day</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Manual criteria</span><span style="font-size:12px;text-align:right">3W return ≥ 20%, accelerating, volume confirmed, not within 5% of 52W high, $ volume &gt; $10M/day</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Size</span><span style="font-size:12px">1.5% / 1.0% / 0.5% of trading bankroll cap by tier (STRONG/SOLID/WATCH) — not risk-based, still editable per trade</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Max open</span><span style="font-size:12px">No hard cap — warns at 2-3 open, warns harder at 4+</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Exit</span><span style="font-size:12px">3-week maximum hold — see Exit rules below</span></div>
@@ -4048,7 +4048,7 @@ function oppStatusInfo(ret3w, accel, dist52w, dv, liveVal, entry, maxEntry){
   if(ret3w < 0.20) fails.push('3W<20%');
   if(!accel) fails.push('no accel');
   if(dist52w > -0.05) fails.push('near 52W high');
-  if(dv < 100) fails.push('$vol<$100M');
+  if(dv < 10) fails.push('$vol<$10M');
   if(fails.length){
     return { text: 'SKIP · ' + fails[0] + (fails.length>1?' +'+(fails.length-1):''), bg:'#fcebeb', fg:'#a32d2d' };
   }
@@ -4245,7 +4245,7 @@ function buildOppScanTable(rows, T){
   });
 
   html += '</tbody></table></div>';
-  html += '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:6px;font-style:italic">Status is computed from your manual criteria (3W≥20%, accelerating, not within 5% of 52W high, $vol&gt;$100M) plus Live $ vs Max Entry. * Max Entry reuses the systematic model\'s backtested 0.6% chase threshold as a placeholder — not independently validated for Bucket 2. Deploy $ defaults by Tier as 1.5%/1.0%/0.5% of your trading bankroll cap (STRONG/SOLID/WATCH — currently $' + bankrollCap.toLocaleString() + ') — still editable per row. Max 2 open at any time, regardless of how many say TRADE. → log pre-fills the form below; Skip logs a reason without taking the trade, so re-loading this scan later shows what you\'ve already decided on each name.</div>';
+  html += '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:6px;font-style:italic">Status is computed from your manual criteria (3W≥20%, accelerating, not within 5% of 52W high, $vol&gt;$10M) plus Live $ vs Max Entry. * Max Entry reuses the systematic model\'s backtested 0.6% chase threshold as a placeholder — not independently validated for Bucket 2. Deploy $ defaults by Tier as 1.5%/1.0%/0.5% of your trading bankroll cap (STRONG/SOLID/WATCH — currently $' + bankrollCap.toLocaleString() + ') — still editable per row. Max 2 open at any time, regardless of how many say TRADE. → log pre-fills the form below; Skip logs a reason without taking the trade, so re-loading this scan later shows what you\'ve already decided on each name.</div>';
   return html;
 }
 
