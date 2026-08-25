@@ -627,6 +627,29 @@ canvas{width:100%!important}
 <div class="tagline">Separate from the systematic model — see the Overall tab for combined numbers</div>
 
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Open plays</div>
+<div class="grid-4" style="margin-bottom:.75rem">
+  <div class="metric metric-live">
+    <div class="lbl">Live P&amp;L</div>
+    <div class="val" id="opp-live-pnl">$0.00</div>
+    <div class="sub" id="opp-live-pnl-sub">no open plays</div>
+  </div>
+  <div class="metric metric-live">
+    <div class="lbl">Total deployed</div>
+    <div class="val" id="opp-live-deployed">$0</div>
+    <div class="sub" id="opp-live-deployed-sub">across 0 plays</div>
+  </div>
+  <div class="metric metric-live">
+    <div class="lbl">Max loss</div>
+    <div class="val" id="opp-live-risked">$0</div>
+    <div class="sub">if all stops hit</div>
+  </div>
+  <div class="metric metric-live">
+    <div class="lbl">Open plays</div>
+    <div class="val" id="opp-live-count">0</div>
+    <div class="sub" id="opp-live-count-sub">tickers</div>
+  </div>
+</div>
+
 <div class="card" id="opp-plays-card">
   <div class="card-hdr">
     <div class="ctitle">🎯 Opportunistic plays — open</div>
@@ -636,6 +659,22 @@ canvas{width:100%!important}
     <div id="opp-overdue-banner"></div>
     <div id="opp-open-list"><div style="font-size:13px;opacity:.5">No open plays</div></div>
   </div>
+</div>
+
+<!-- LIVE P&L CHART -->
+<div class="card">
+  <div class="card-hdr">
+    <div>
+      <div class="ctitle" style="margin-bottom:4px">Live P&amp;L per open play</div>
+      <div class="chart-legend">
+        <span><span class="legend-dot" style="background:#1D9E75"></span><span style="font-size:11px">Profit</span></span>
+        <span><span class="legend-dot" style="background:#E24B4A"></span><span style="font-size:11px">Loss</span></span>
+      </div>
+    </div>
+    <div style="font-size:11px;text-align:right;font-style:italic">open plays mark-to-market · refreshes every 30s</div>
+  </div>
+  <div style="position:relative;height:140px"><canvas id="opp-live-chart"></canvas></div>
+  <div style="font-size:12px;margin-top:8px;text-align:center" id="opp-live-chart-empty">Log a play to see live P&amp;L here.</div>
 </div>
 
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Performance</div>
@@ -2195,6 +2234,7 @@ function buildEquityChart(){
 
 /* ── CHART 2: This week — live P&L per open position ── */
 let weekChart=null;
+let oppLiveChart=null;
 function buildWeekChart(){
   const ctx=document.getElementById('week-chart').getContext('2d');
   const noTrades=document.getElementById('week-no-trades');
@@ -3964,7 +4004,10 @@ function prefillTrade(ticker, entry, stop, target, shares, sector, company){
 // ══════════════════════════════════════════════════════════════════
 let opportunisticPlays = [];
 let oppPrices = {};
-let oppSectionOpen = !(window.matchMedia && window.matchMedia('(max-width:640px)').matches);
+// Always defaults open, even on mobile -- open plays are real money at
+// risk and shouldn't require a tap to see, same as the systematic
+// Dashboard's "This week's slate" card, which has no hide toggle at all.
+let oppSectionOpen = true;
 
 function saveOpportunisticPlays(){
   if(!userRef) return;
@@ -4905,9 +4948,115 @@ function buildOverallEquityChart(){
   });
 }
 
+// Live summary tiles, mirroring the systematic Dashboard's "Open positions"
+// grid-4 (Live P&L / Total Shares / Max Loss / Watching) -- Bucket 2 has no
+// share-count or weekly-watchlist concept, so "Total deployed $" and "Open
+// plays" stand in for those two rather than forcing an exact 1:1 mapping.
+// P&L math matches renderOppOpenList()'s existing convention (% move ×
+// dollars deployed, since plays store a $ amount, not a literal share count).
+function renderOppLiveSummary(){
+  const T = THEME;
+  const open = opportunisticPlays.filter(p => p.status === 'open');
+
+  const pnlEl = document.getElementById('opp-live-pnl');
+  const pnlSubEl = document.getElementById('opp-live-pnl-sub');
+  if(open.length){
+    const livePnl = open.reduce((s,p) => {
+      const cur = (oppPrices[p.ticker] != null) ? oppPrices[p.ticker] : p.entryPrice;
+      const pct = p.entryPrice > 0 ? (cur - p.entryPrice) / p.entryPrice : 0;
+      return s + pct * p.deployed;
+    }, 0);
+    pnlEl.textContent = fmtP(livePnl);
+    pnlEl.style.color = livePnl >= 0 ? T.win : T.loss;
+    pnlSubEl.textContent = open.length + ' open play' + (open.length>1?'s':'') + ' mark-to-market';
+  } else {
+    pnlEl.textContent = '$0.00'; pnlEl.style.color = T.textMuted;
+    pnlSubEl.textContent = 'no open plays';
+  }
+
+  const totalDeployed = open.reduce((s,p) => s + (p.deployed||0), 0);
+  const depEl = document.getElementById('opp-live-deployed');
+  depEl.textContent = '$' + Math.round(totalDeployed).toLocaleString();
+  depEl.style.color = totalDeployed > 0 ? T.textPrimary : T.textMuted;
+  document.getElementById('opp-live-deployed-sub').textContent =
+    'across ' + open.length + ' play' + (open.length!==1?'s':'');
+
+  const totalRisked = open.reduce((s,p) => {
+    if(p.stopPrice == null || p.entryPrice <= 0) return s;
+    const pctToStop = (p.entryPrice - p.stopPrice) / p.entryPrice;
+    return s + Math.max(pctToStop, 0) * p.deployed;
+  }, 0);
+  const rkEl = document.getElementById('opp-live-risked');
+  rkEl.textContent = totalRisked > 0 ? '$' + totalRisked.toFixed(0) : '$0';
+  rkEl.style.color = totalRisked > 0 ? T.neutral : T.textMuted;
+
+  const cntEl = document.getElementById('opp-live-count');
+  cntEl.textContent = open.length;
+  cntEl.style.color = open.length > 0 ? T.textPrimary : T.textMuted;
+  document.getElementById('opp-live-count-sub').textContent =
+    open.length ? [...new Set(open.map(p=>p.ticker))].join(', ') : 'tickers';
+}
+
+function buildOppLiveChart(){
+  const canvas = document.getElementById('opp-live-chart');
+  const emptyEl = document.getElementById('opp-live-chart-empty');
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const open = opportunisticPlays.filter(p => p.status === 'open');
+
+  if(!open.length){
+    emptyEl.style.display = 'block';
+    emptyEl.style.color = THEME.textMuted;
+    if(oppLiveChart){ oppLiveChart.destroy(); oppLiveChart = null; }
+    oppLiveChart = new Chart(ctx,{type:'bar',data:{labels:[],datasets:[{data:[]}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{display:false},y:{display:false}}}});
+    return;
+  }
+  emptyEl.style.display = 'none';
+
+  const labels = open.map(p => p.ticker);
+  const data = open.map(p => {
+    const cur = (oppPrices[p.ticker] != null) ? oppPrices[p.ticker] : p.entryPrice;
+    const pct = p.entryPrice > 0 ? (cur - p.entryPrice) / p.entryPrice : 0;
+    return parseFloat((pct * p.deployed).toFixed(2));
+  });
+  const barColors = data.map(v => v>0?THEME.progressUp:v<0?THEME.progressDown:THEME.progressFlat);
+
+  if(oppLiveChart) oppLiveChart.destroy();
+  oppLiveChart = new Chart(ctx,{
+    type:'bar',
+    data:{ labels, datasets:[{ label:'Live P&L', data, backgroundColor:barColors, borderRadius:5, borderSkipped:false }] },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{
+          label:c=>{
+            const p = open[c.dataIndex];
+            const cur = (oppPrices[p.ticker] != null) ? oppPrices[p.ticker] : p.entryPrice;
+            const pct = ((cur - p.entryPrice) / p.entryPrice * 100).toFixed(2);
+            return [`P&L: ${fmtP(c.parsed.y)}`, `Move: ${pct}%`, `Deployed: $${p.deployed.toFixed(0)}`];
+          }
+        }}
+      },
+      scales:{
+        x:{ticks:{font:{size:12},color:THEME.textPrimary},grid:{display:false}},
+        y:{
+          grid:{color:THEME.chartGridColor},
+          ticks:{font:{size:10},color:THEME.textMuted,callback:v=>(v>=0?'+$':'-$')+Math.abs(v)},
+          border:{dash:[4,4]},
+        }
+      }
+    }
+  });
+}
+
 function renderOpportunisticPlays(){
   renderOppOverdueBanner();
+  renderOppLiveSummary();
   renderOppOpenList();
+  buildOppLiveChart();
   renderOppClosedList();
   renderOppMetrics();
   buildOppEquityChart();
