@@ -4050,6 +4050,92 @@ function updateOppDeploy(inputEl){
   saveOppScanStore();
 }
 
+// Tier-based default sizing -- ties Deploy $ to the scanner's own
+// rule-based signal-strength measure (3W return / vol surge thresholds)
+// instead of a flat number or unstructured "conviction". Still fully
+// editable per row; this only sets the starting point.
+function oppDefaultDeployForTier(tier){
+  if(tier === 'STRONG') return 500;
+  if(tier === 'SOLID') return 400;
+  if(tier === 'WATCH') return 300;
+  return 400;
+}
+function oppTierBadge(tier){
+  if(tier === 'STRONG') return '<span class="slate-badge" style="background:#E1F5EE;color:#085041;margin-left:4px">STRONG</span>';
+  if(tier === 'SOLID') return '<span class="slate-badge" style="background:#FAEEDA;color:#854F0B;margin-left:4px">SOLID</span>';
+  if(tier === 'WATCH') return '<span class="slate-badge" style="background:' + THEME.progressTrack + ';color:' + THEME.textMuted + ';margin-left:4px">WATCH</span>';
+  return '';
+}
+
+// Cross-references a scanned ticker against your own Bucket 2 history
+// (open / skipped / closed) so re-loading the scan shows what you've
+// already done with a name, without ever touching the CSV itself --
+// the CSV is regenerated fresh every run, so anything written into it
+// would just vanish next time. This reads live opportunisticPlays instead.
+function oppTickerHistoryBadge(ticker){
+  const matches = opportunisticPlays.filter(p => p.ticker === ticker);
+  if(!matches.length) return '';
+  const open = matches.find(p => p.status === 'open');
+  if(open) return '<span style="display:inline-block;margin-left:4px;font-size:9px;padding:1px 6px;border-radius:4px;background:#0d2e22;color:#1fba85;white-space:nowrap">● Active</span>';
+  const skipped = matches.filter(p => p.status === 'skipped').sort((a,b) => new Date(b.entryDate||0) - new Date(a.entryDate||0))[0];
+  const closed = matches.filter(p => p.status === 'closed').sort((a,b) => new Date(b.exitDate||0) - new Date(a.exitDate||0))[0];
+  const skippedDate = skipped ? new Date(skipped.entryDate||0) : null;
+  const closedDate = closed ? new Date(closed.exitDate||0) : null;
+  if(skipped && (!closed || skippedDate >= closedDate)){
+    const title = skipped.entryDate + (skipped.skipReason ? ' · ' + skipped.skipReason : '');
+    return '<span style="display:inline-block;margin-left:4px;font-size:9px;padding:1px 6px;border-radius:4px;background:' + THEME.progressTrack + ';color:' + THEME.textMuted + ';white-space:nowrap" title="' + escHtml(title) + '">Seen — skipped</span>';
+  }
+  if(closed){
+    const pnl = closed.realizedPnl || 0;
+    const bg = pnl >= 0 ? '#0d2e22' : '#2e0d0d', fg = pnl >= 0 ? '#1fba85' : '#e55555';
+    return '<span style="display:inline-block;margin-left:4px;font-size:9px;padding:1px 6px;border-radius:4px;background:' + bg + ';color:' + fg + ';white-space:nowrap">Closed ' + (pnl>=0?'+':'') + '$' + pnl.toFixed(0) + '</span>';
+  }
+  return '';
+}
+
+const OPP_SKIP_REASONS = ['No conviction','Correlated with existing pick','Above max entry','Personal choice','Other'];
+
+function showOppSkipMenu(ticker){
+  const T = THEME;
+  const cell = document.getElementById('opp-scan-action-cell-' + ticker);
+  if(!cell) return;
+  cell.innerHTML = '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">'
+    + '<select id="opp-skip-reason-' + ticker + '" style="font-size:11px;padding:3px 5px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.inputBg + ';color:' + T.textPrimary + '">'
+    + OPP_SKIP_REASONS.map(r => '<option value="' + escHtml(r) + '">' + escHtml(r) + '</option>').join('')
+    + '</select>'
+    + '<button onclick="confirmOppSkip(\'' + ticker + '\')" title="Confirm skip" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">✓</button>'
+    + '<button onclick="renderOppScan()" title="Cancel" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textMuted + '">✕</button>'
+    + '</div>';
+}
+
+// Reuses the opportunisticPlays collection (a 'skipped' status alongside
+// the existing 'open'/'closed') rather than a parallel candidatePool-style
+// structure -- Bucket 2's schema has no week/regime/R-multiple concept for
+// a skip record to hang off of the way the systematic one does.
+async function skipOppCandidate(ticker, entryPrice, reason){
+  const play = {
+    id: Date.now().toString() + '-' + ticker,
+    ticker, entryDate: new Date().toISOString().slice(0,10), entryPrice,
+    deployed: null, notes: '', status: 'skipped', skipReason: reason,
+    exitDate: null, exitPrice: null, realizedPnl: null,
+  };
+  opportunisticPlays.push(play);
+  saveOpportunisticPlays();
+}
+
+async function confirmOppSkip(ticker){
+  const cell = document.getElementById('opp-scan-action-cell-' + ticker);
+  const entryAttr = cell ? cell.getAttribute('data-entry') : null;
+  const entryPrice = entryAttr ? parseFloat(entryAttr) : 0;
+  const sel = document.getElementById('opp-skip-reason-' + ticker);
+  const reason = sel ? sel.value : 'Other';
+  await skipOppCandidate(ticker, entryPrice, reason);
+  if(cell){
+    const T = THEME;
+    cell.innerHTML = '<span style="font-size:11px;color:' + T.textMuted + '">Skipped — logged</span>';
+  }
+}
+
 function buildOppScanTable(rows, T){
   const cols = ['Rank','Ticker','Signal','Score','3W Ret','1W Ret','Entry','Max Entry*','Stop','Target','DV($M)','Accel','Live $','Deploy $','Status','Action'];
   let html = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">'
@@ -4060,6 +4146,7 @@ function buildOppScanTable(rows, T){
   rows.forEach((r, idx) => {
     const ticker = r['Ticker'] || '';
     const signal = r['Signal'] || '';
+    const tier   = (r['Tier'] || '').trim();
     const score  = parseFloat(r['Score']) || 0;
     const ret3w  = parseFloat(r['Return 3W']) || 0;
     const ret1w  = parseFloat(r['Return 1W']) || 0;
@@ -4073,15 +4160,22 @@ function buildOppScanTable(rows, T){
     const rowBg  = idx % 2 === 0 ? T.cardBg : T.metricBg;
     const rank   = parseInt(r['Rank']) || (idx + 1);
 
+    const warningRaw = (r['Warning'] || '').trim();
+    const warningAbbrev = warningRaw ? warningRaw.split(';')[0].trim().replace('crypto-sentiment','crypto') : '';
+    const warningBadge = warningRaw
+      ? '<span style="display:inline-block;margin-left:4px;font-size:9px;padding:1px 6px;border-radius:4px;background:#FAEEDA;color:#854F0B;white-space:nowrap" title="' + escHtml(warningRaw) + '">' + escHtml(warningAbbrev) + '</span>'
+      : '';
+    const historyBadge = oppTickerHistoryBadge(ticker);
+
     const storedLive = oppScanStore.livePrices ? oppScanStore.livePrices[ticker] : undefined;
     const liveVal = (storedLive !== undefined && storedLive !== null && storedLive !== '') ? parseFloat(storedLive) : NaN;
     const storedDeploy = oppScanStore.deployed ? oppScanStore.deployed[ticker] : undefined;
-    const deployVal = (storedDeploy !== undefined && storedDeploy !== null && storedDeploy !== '') ? parseFloat(storedDeploy) : 400;
+    const deployVal = (storedDeploy !== undefined && storedDeploy !== null && storedDeploy !== '') ? parseFloat(storedDeploy) : oppDefaultDeployForTier(tier);
     const status = oppStatusInfo(ret3w, accel, dist52w, dv, liveVal, entry, maxEntry);
 
     html += '<tr style="background:' + rowBg + ';border-bottom:.5px solid ' + T.cardBorder + '">'
       + '<td style="padding:6px;text-align:right;color:' + T.textMuted + '">#' + rank + '</td>'
-      + '<td style="padding:6px;font-weight:500;color:' + T.textPrimary + '">' + escHtml(ticker) + '</td>'
+      + '<td style="padding:6px;font-weight:500;color:' + T.textPrimary + '">' + escHtml(ticker) + oppTierBadge(tier) + warningBadge + historyBadge + '</td>'
       + '<td style="padding:6px;font-size:10px;color:' + T.textMuted + '">' + escHtml(signal) + '</td>'
       + '<td style="padding:6px;text-align:right;color:' + T.textPrimary + '">' + score.toFixed(2) + '</td>'
       + '<td style="padding:6px;text-align:right;color:' + (ret3w>=0?T.win:T.loss) + '">' + (ret3w*100>=0?'+':'') + (ret3w*100).toFixed(1) + '%</td>'
@@ -4100,16 +4194,21 @@ function buildOppScanTable(rows, T){
         + '</td>'
       + '<td style="padding:6px;text-align:right">'
         + '<input type="number" step="1" min="300" max="500" value="' + deployVal + '" '
-        + 'data-ticker="' + ticker + '" oninput="updateOppDeploy(this)" '
+        + 'id="opp-deploy-input-' + ticker + '" data-ticker="' + ticker + '" oninput="updateOppDeploy(this)" '
         + 'style="width:60px;font-size:12px;padding:4px 6px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.metricBg + ';color:' + T.textPrimary + ';text-align:right">'
         + '</td>'
       + '<td style="padding:6px;text-align:center" id="opp-status-cell-' + ticker + '">' + statusBadgeHtml(status, T) + '</td>'
-      + '<td style="padding:6px"><button onclick="oppPrefillFromScan(\'' + ticker + '\',' + entry + ')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">→ log</button></td>'
+      + '<td style="padding:6px" id="opp-scan-action-cell-' + ticker + '" data-entry="' + entry + '">'
+        + '<div style="display:flex;gap:4px">'
+        + '<button onclick="oppPrefillFromScan(\'' + ticker + '\',' + entry + ')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">→ log</button>'
+        + '<button onclick="showOppSkipMenu(\'' + ticker + '\')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textMuted + '">Skip</button>'
+        + '</div>'
+        + '</td>'
       + '</tr>';
   });
 
   html += '</tbody></table></div>';
-  html += '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:6px;font-style:italic">Status is computed from your manual criteria (3W≥20%, accelerating, not within 5% of 52W high, $vol&gt;$100M) plus Live $ vs Max Entry. * Max Entry reuses the systematic model\'s backtested 0.6% chase threshold as a placeholder — not independently validated for Bucket 2. Max 2 open at any time, regardless of how many say TRADE. Clicking → log pre-fills the form below with your Deploy $; confirm before saving.</div>';
+  html += '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:6px;font-style:italic">Status is computed from your manual criteria (3W≥20%, accelerating, not within 5% of 52W high, $vol&gt;$100M) plus Live $ vs Max Entry. * Max Entry reuses the systematic model\'s backtested 0.6% chase threshold as a placeholder — not independently validated for Bucket 2. Deploy $ defaults by Tier (STRONG→$500, SOLID→$400, WATCH→$300) — still editable per row. Max 2 open at any time, regardless of how many say TRADE. → log pre-fills the form below; Skip logs a reason without taking the trade, so re-loading this scan later shows what you\'ve already decided on each name.</div>';
   return html;
 }
 
@@ -4136,8 +4235,12 @@ function oppPrefillFromScan(ticker, entryPrice){
   if(tEl) tEl.value = ticker;
   const pEl = document.getElementById('opp-in-price');
   if(pEl) pEl.value = entryPrice;
-  const storedDeploy = oppScanStore.deployed ? oppScanStore.deployed[ticker] : undefined;
-  const depDefault = (storedDeploy !== undefined && storedDeploy !== null && storedDeploy !== '') ? storedDeploy : 400;
+  // Read the scan row's own Deploy $ input directly rather than only
+  // oppScanStore.deployed[ticker] -- that only gets set once the user
+  // actually edits the field, so an untouched tier-based default (e.g.
+  // $500 for a STRONG tier) wouldn't otherwise carry through here.
+  const scanInputEl = document.getElementById('opp-deploy-input-' + ticker);
+  const depDefault = scanInputEl && scanInputEl.value !== '' ? parseFloat(scanInputEl.value) : 400;
   const depEl = document.getElementById('opp-in-deployed');
   if(depEl) depEl.value = depDefault;
   if(tEl) tEl.scrollIntoView({ behavior:'smooth', block:'center' });
