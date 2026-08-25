@@ -104,6 +104,26 @@ RESULTS_DIR = PROJECT_ROOT / "Results"
 RAW_DATA_DIR = DATA_DIR / "raw_data"
 EXECUTION_LOG_PATH = RESULTS_DIR / "execution_log.csv"
 CANDIDATE_DIR = RESULTS_DIR / "candidates"
+CONFIG_DIR = PROJECT_ROOT / "config"
+FIRESTORE_KEY_PATH = CONFIG_DIR / "firebase_service_account.json"
+FIRESTORE_USER_CONFIG_PATH = CONFIG_DIR / "user_config.json"
+
+# ------------------- CONCENTRATION / CORRELATION WARNINGS -------------------
+# Informational only — never excludes, reorders, or resizes a candidate.
+# Shared between the V2 systematic slate and the Bucket 2 opportunity scan.
+CRYPTO_CLUSTER = {
+    "MSTR", "MARA", "RIOT", "COIN", "HOOD", "BMNR", "BLSH", "CRCL",
+    "BITO", "FBTC", "GBTC", "IBIT",
+}
+GOLD_CLUSTER = {"GLD", "GDX", "GDXJ", "SLV", "AU", "NEM", "AEM", "WPM", "RGLD"}
+BIOTECH_TICKERS = {"XBI", "IBB", "LABU", "ARKG"}
+BIOTECH_ATR_PCT_THRESHOLD = 0.05
+
+CONCENTRATION_EXPLANATIONS = {
+    "crypto-sentiment": "one bet not two",
+    "gold": "correlated commodity exposure",
+    "biotech": "correlated biotech volatility",
+}
 
 # ------------------- BUCKET 2 OPPORTUNITY SCANNER CONFIG (--opportunities) -------------------
 # Entirely separate from the V2 systematic model above: expanded universe,
@@ -124,11 +144,30 @@ OPP_TOP_N = 10
 OPP_SIZING_NOTE = "$300-500 deployed (fixed, not risk-based)"
 
 OPP_CSV_COLUMNS = [
-    "Rank", "Ticker", "Universe", "Signal", "Score",
+    "Rank", "Ticker", "Universe", "Signal", "Tier", "Score",
     "Return 3W", "Return 1W", "Vol Surge", "Entry Price",
     "Stop Price", "Target Price", "Avg DV ($M)", "Accel",
-    "Dist 52W", "ATR Pct",
+    "Dist 52W", "ATR Pct", "Warning",
 ]
+
+# Conviction tiers (Change 4) — purely a display label, never a filter.
+OPP_TIER_STRONG_RET_3W = 0.40
+OPP_TIER_STRONG_VOL = 8.0
+OPP_TIER_SOLID_RET_3W = 0.30
+OPP_TIER_SOLID_VOL = 5.0
+OPP_TIER_WATCH_RET_3W = 0.20
+
+
+def opportunity_tier(ret_3w: float, vol_surge: float) -> str:
+    ret_3w = ret_3w if pd.notna(ret_3w) else 0.0
+    vol_surge = vol_surge if pd.notna(vol_surge) else 0.0
+    if ret_3w >= OPP_TIER_STRONG_RET_3W or vol_surge >= OPP_TIER_STRONG_VOL:
+        return "STRONG"
+    if ret_3w >= OPP_TIER_SOLID_RET_3W or vol_surge >= OPP_TIER_SOLID_VOL:
+        return "SOLID"
+    if ret_3w >= OPP_TIER_WATCH_RET_3W:
+        return "WATCH"
+    return ""
 
 
 def ensure_directories() -> None:
@@ -258,13 +297,103 @@ def size_positions(candidates: pd.DataFrame) -> pd.DataFrame:
 
 # Full V2 output column order (Change 10). Company is appended at the end —
 # it isn't part of the spec'd order but was present in V1 output, so it's
-# kept as an additive trailing column rather than dropped.
+# kept as an additive trailing column rather than dropped. Warning (added
+# for the concentration-warning feature) is appended after Company for the
+# same reason — additive, not a reordering of the existing schema.
 CANDIDATE_COLUMN_ORDER = [
     "Rank", "Ticker", "Signal Score", "Entry Price", "Max Entry", "Stop Price", "Target Price",
     "Shares", "Return 1W", "RSI 14", "Regime", "Sector",
     "Filters Passed", "Score Gap", "Dist 52W", "Sector ETF", "Sector ETF 3W", "Accel",
-    "Company",
+    "Company", "Warning",
 ]
+
+
+def compute_concentration_warnings(df: pd.DataFrame) -> pd.Series:
+    """
+    Given a candidates DataFrame with at least a lowercase 'ticker' column
+    (and, where available, 'sector' / 'atr_pct'), returns a Series of
+    semicolon-joined warning labels aligned to df.index — empty string
+    where nothing is flagged. Purely informational: never excludes,
+    reorders, or resizes anything.
+
+    Checks four types of concentration risk within the SAME slate/scan:
+      A — 2+ candidates share a sector (skipped if no 'sector' column —
+          Bucket 2's scan has no sector data)
+      B — 2+ candidates are in the crypto-sentiment cluster
+      C — 2+ candidates are in the gold/commodity cluster
+      D — 2+ candidates are biotech (explicit ETF tickers, or — where
+          'sector'/'atr_pct' are available — Healthcare sector with
+          ATR% > 5%)
+    """
+    if df.empty:
+        return pd.Series([], dtype=str, index=df.index)
+
+    warnings: dict[int, list[str]] = {idx: [] for idx in df.index}
+    tickers_in_slate = set(df["ticker"])
+
+    # Type A — same sector
+    if "sector" in df.columns:
+        for sector, grp in df.groupby("sector"):
+            if sector and sector != "Other" and len(grp) >= 2:
+                for idx in grp.index:
+                    warnings[idx].append(f"SECTOR: {sector}")
+
+    # Type B — crypto-sentiment cluster
+    crypto_hits = tickers_in_slate & CRYPTO_CLUSTER
+    if len(crypto_hits) >= 2:
+        for idx in df[df["ticker"].isin(crypto_hits)].index:
+            warnings[idx].append("CORR: crypto-sentiment")
+
+    # Type C — gold/commodity cluster
+    gold_hits = tickers_in_slate & GOLD_CLUSTER
+    if len(gold_hits) >= 2:
+        for idx in df[df["ticker"].isin(gold_hits)].index:
+            warnings[idx].append("CORR: gold")
+
+    # Type D — biotech cluster (explicit tickers, plus Healthcare+high-ATR
+    # where sector data exists)
+    biotech_mask = df["ticker"].isin(BIOTECH_TICKERS)
+    if "sector" in df.columns and "atr_pct" in df.columns:
+        biotech_mask = biotech_mask | (
+            (df["sector"] == "Healthcare") & (df["atr_pct"] > BIOTECH_ATR_PCT_THRESHOLD)
+        )
+    biotech_hits = df[biotech_mask]
+    if len(biotech_hits) >= 2:
+        for idx in biotech_hits.index:
+            warnings[idx].append("CORR: biotech")
+
+    return pd.Series({idx: "; ".join(v) for idx, v in warnings.items()})
+
+
+def print_concentration_warnings(df: pd.DataFrame, ticker_col: str = "ticker", warning_col: str = "Warning") -> None:
+    """
+    Prints the grouped "⚠ Concentration warnings:" section after a
+    candidate table. Prints nothing at all if there are no warnings.
+    """
+    if df.empty or warning_col not in df.columns:
+        return
+
+    groups: dict[str, list[str]] = {}
+    for _, row in df.iterrows():
+        label = row[warning_col]
+        if not label:
+            continue
+        for single in str(label).split("; "):
+            groups.setdefault(single, []).append(str(row[ticker_col]))
+
+    if not groups:
+        return
+
+    print("⚠ Concentration warnings:")
+    for label, tickers in groups.items():
+        names = " + ".join(tickers)
+        if label.startswith("CORR: "):
+            kind = label[len("CORR: "):]
+            explain = CONCENTRATION_EXPLANATIONS.get(kind, "correlated moves")
+            print(f"  {names}: CORR {kind} — {explain}")
+        elif label.startswith("SECTOR: "):
+            sector = label[len("SECTOR: "):]
+            print(f"  {names}: SECTOR {sector} — correlated moves")
 
 # Filenames matching exactly "candidates_YYYY-MM-DD.csv" — excludes the
 # _backup_, _backfill_, and candidate_pool_ variants.
@@ -721,10 +850,15 @@ def run_daily_model(log_trades: bool = False) -> Path | None:
     filter_cols = ["f_vol", "f_gap", "f_fresh", "f_sector", "f_price", "f_etf", "f_52w", "f_earn", "f_accel"]
     pool["filters_passed"] = pool[filter_cols].sum(axis=1).astype(int)
 
-    # --- Change 8: select top 3 by signal_score ---
+    # --- Change 8: show every candidate passing 7+ filters, ranked by score ---
+    # No artificial top-N cutoff — TOP_N_CANDIDATES is still used by backfill
+    # mode (untouched), just not here. In practice everything reaching this
+    # point already has filters_passed in {8, 9} (F1/F2/F3/F4/F5/fresh/etf/
+    # earn are all hard-enforced by row-drops earlier in the pipeline; only
+    # f_accel varies), so "7+" is a genuine floor, not a no-op guess.
     pool = pool.sort_values("signal_score", ascending=False).reset_index(drop=True)
-    selected = pool.head(TOP_N_CANDIDATES).copy()
-    print(f">>> Selected {len(selected)} candidate(s) after all filters")
+    selected = pool[pool["filters_passed"] >= 7].copy().reset_index(drop=True)
+    print(f">>> Selected {len(selected)} candidate(s) after all filters — showing all")
 
     # --- Change 9: stop / target recalculation + dynamic position sizing ---
     selected["entry_price"] = selected["close"]
@@ -770,11 +904,13 @@ def run_daily_model(log_trades: bool = False) -> Path | None:
         return out_path
 
     selected["company"] = selected["ticker"].map(company_map).fillna("")
+    selected["Warning"] = compute_concentration_warnings(selected)
 
     out_path = save_candidates_csv(selected, regime=regime, score_gap=score_gap)
     print(f">>> Daily candidates saved to: {out_path}")
 
     print_candidate_table(selected, score_gap)
+    print_concentration_warnings(selected)
     print_premarket_check(selected)
 
     pool_path = save_candidate_pool(signals, selected, sector_map, company_map, universe_tickers=sp500_tickers)
@@ -1123,7 +1259,84 @@ def compute_opportunity_prices(candidates: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def print_opportunity_table(candidates: pd.DataFrame) -> None:
+def which_universe(ticker: str, universe_sets: dict[str, set[str]]) -> str:
+    if ticker in universe_sets["r1000_extra"]:
+        return "R1000"
+    if ticker in universe_sets["midcap"]:
+        return "MidCap"
+    if ticker in universe_sets["etfs"]:
+        return "ETF"
+    return "Other"
+
+
+def get_bucket2_open_count() -> int | None:
+    """
+    Reads users/{uid}/data/opportunisticPlays from Firestore (same
+    ADC-then-service-account pattern friday_close.py uses for
+    candidatePool) and counts plays with status == 'open'.
+
+    Returns None — never 0 — if Firebase isn't installed, isn't
+    configured, or the read fails for any reason. Callers must treat
+    None as "unknown" and skip the warning, not treat it as "0 open":
+    this must never block or fabricate a false all-clear on candidate
+    output.
+    """
+    try:
+        import firebase_admin
+        from firebase_admin import credentials, firestore
+    except ImportError:
+        return None
+
+    if not FIRESTORE_USER_CONFIG_PATH.exists():
+        return None
+
+    try:
+        with open(FIRESTORE_USER_CONFIG_PATH) as f:
+            uid = json.load(f).get("uid")
+        if not uid:
+            return None
+
+        if not firebase_admin._apps:
+            try:
+                firebase_admin.initialize_app()
+                firestore.client()  # ADC is resolved lazily — force it now
+            except Exception:
+                for app in list(firebase_admin._apps.values()):
+                    firebase_admin.delete_app(app)
+                if FIRESTORE_KEY_PATH.exists():
+                    cred = credentials.Certificate(str(FIRESTORE_KEY_PATH))
+                    firebase_admin.initialize_app(cred)
+                else:
+                    return None
+
+        db = firestore.client()
+        doc_ref = (
+            db.collection("users").document(uid)
+            .collection("data").document("opportunisticPlays")
+        )
+        doc = doc_ref.get()
+        items = doc.to_dict().get("items", []) if doc.exists else []
+        return sum(1 for it in items if it.get("status") == "open")
+    except Exception as exc:
+        print(f"    (couldn't read Bucket 2 open-position count from Firestore: {exc})")
+        return None
+
+
+def print_bucket2_open_warning(open_count: int | None) -> None:
+    """Change 3: graduated warning, never a hard cap. Prints nothing at 0-1 open or unknown count."""
+    if open_count is None or open_count <= 1:
+        return
+    if open_count <= 3:
+        print(f">>> ⚠ {open_count} opportunistic plays currently open — adding more increases concentration")
+    else:
+        print(f">>> ⚠ {open_count} opportunistic plays open — high concentration, be selective")
+
+
+def print_opportunity_table(
+    candidates: pd.DataFrame,
+    universe_sets: dict[str, set[str]],
+    open_count: int | None,
+) -> None:
     print(">>> " + "=" * 60)
     print(">>> BUCKET 2 — OPPORTUNITY SCANNER")
     print(">>> " + "=" * 60)
@@ -1137,24 +1350,29 @@ def print_opportunity_table(candidates: pd.DataFrame) -> None:
         return
 
     print(
-        f">>> {'Rank':<6}{'Ticker':<8}{'Signal':<16}{'Score':<7}{'3W Ret':<8}"
-        f"{'1W Ret':<8}{'Vol':<6}{'Entry':<8}{'Stop':<8}{'Target':<8}{'DV($M)':<8}{'Accel'}"
+        f">>> {'Rank':<6}{'Ticker':<8}{'Universe':<9}{'Signal':<14}{'Tier':<8}{'3W Ret':<8}"
+        f"{'1W Ret':<8}{'Vol':<6}{'Entry':<8}{'Stop':<8}{'Target':<8}{'DV($M)':<8}{'Accel':<7}{'Warning'}"
     )
-    print(">>> " + "-" * 87)
+    print(">>> " + "-" * 115)
     for i, row in enumerate(candidates.itertuples(), start=1):
         accel_mark = "✓" if row.accel else "✗"
         ret_3w_s = f"{row.ret_3w*100:.1f}%"
         ret_1w_s = f"{row.ret_1w*100:.1f}%"
         vol_s = f"{row.vol_surge:.1f}x"
+        universe = which_universe(row.ticker, universe_sets)
+        warning = getattr(row, "Warning", "") or ""
         print(
-            f">>> {i:<6}{row.ticker:<8}{row.signal:<16}{row.momentum_score:<7.2f}"
+            f">>> {i:<6}{row.ticker:<8}{universe:<9}{row.signal:<14}{row.Tier:<8}"
             f"{ret_3w_s:<8}{ret_1w_s:<8}{vol_s:<6}"
             f"{row.entry_price:<8.2f}{row.stop_price:<8.2f}{row.target_price:<8.2f}"
-            f"{row.avg_dv_m:<8.0f}{accel_mark}"
+            f"{row.avg_dv_m:<8.0f}{accel_mark:<7}{warning}"
         )
     print(">>>")
+    print_concentration_warnings(candidates)
+    print(">>>")
     print(f">>> Sizing: {OPP_SIZING_NOTE.split(' (')[0]} per play (fixed)")
-    print(">>> Max 2 open at any time")
+    print_bucket2_open_warning(open_count)
+    print(">>> Size each play at $300-500 deployed — your judgment on how many to hold simultaneously")
     print(">>> No mandatory Friday exit — hold until thesis breaks")
     print(">>> These are NOT systematic V2 trades — discretionary only")
 
@@ -1171,21 +1389,13 @@ def save_opportunities_csv(
         pd.DataFrame(columns=OPP_CSV_COLUMNS).to_csv(out_path, index=False)
         return out_path
 
-    def which_universe(ticker: str) -> str:
-        if ticker in universe_sets["r1000_extra"]:
-            return "R1000"
-        if ticker in universe_sets["midcap"]:
-            return "MidCap"
-        if ticker in universe_sets["etfs"]:
-            return "ETF"
-        return "Other"
-
     df = candidates.reset_index(drop=True).copy()
     out = pd.DataFrame({
         "Rank":         range(1, len(df) + 1),
         "Ticker":       df["ticker"],
-        "Universe":     df["ticker"].map(which_universe),
+        "Universe":     df["ticker"].apply(lambda t: which_universe(t, universe_sets)),
         "Signal":       df["signal"],
+        "Tier":         df["Tier"],
         "Score":        df["momentum_score"].round(4),
         "Return 3W":    df["ret_3w"].round(4),
         "Return 1W":    df["ret_1w"].round(4),
@@ -1197,6 +1407,7 @@ def save_opportunities_csv(
         "Accel":        df["accel"],
         "Dist 52W":     df["dist_52w"].round(4),
         "ATR Pct":      df["atr_pct"].round(4),
+        "Warning":      df["Warning"],
     })
     out.to_csv(out_path, index=False)
     return out_path
@@ -1221,7 +1432,12 @@ def run_opportunity_scanner(dry_run: bool = False) -> Path | None:
     else:
         priced = pd.DataFrame()
 
-    print_opportunity_table(priced)
+    if not priced.empty:
+        priced["Tier"] = priced.apply(lambda r: opportunity_tier(r["ret_3w"], r["vol_surge"]), axis=1)
+        priced["Warning"] = compute_concentration_warnings(priced)
+
+    open_count = get_bucket2_open_count()
+    print_opportunity_table(priced, universe_sets, open_count)
 
     if dry_run:
         print(">>> DRY RUN — opportunities CSV not saved")

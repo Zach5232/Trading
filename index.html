@@ -3508,6 +3508,11 @@ function buildSlateTable(rows, showLogBtn, T){
     const storedLive = liveSlateData && liveSlateData.livePrices ? liveSlateData.livePrices[ticker] : undefined;
     const liveVal = (storedLive !== undefined && storedLive !== null && storedLive !== '') ? parseFloat(storedLive) : NaN;
     const status = slateStatusInfo(liveVal, entry, maxEntry, stop);
+    const warningRaw = (r['Warning']||'').trim();
+    const warningAbbrev = warningRaw ? warningRaw.split(';')[0].trim().replace('crypto-sentiment','crypto') : '';
+    const warningBadge = warningRaw
+      ? '<span class="slate-hide-mobile" style="display:inline-block;margin-left:6px;font-size:9px;padding:1px 6px;border-radius:4px;background:#FAEEDA;color:#854F0B;white-space:nowrap;vertical-align:middle" title="' + escHtml(warningRaw) + '">' + escHtml(warningAbbrev) + '</span>'
+      : '';
     const company = (r['Company']||'');
     const sector = (r['Sector']||'Other').replace(/'/g,"'");
     const sectorLabel = SECTOR_COLORS[sector] ? sector : 'Other';
@@ -3542,7 +3547,7 @@ function buildSlateTable(rows, showLogBtn, T){
 
     html += '<tr style="background:' + rowBg + ';border-bottom:.5px solid ' + T.cardBorder + '">'
       + '<td style="padding:8px 8px;text-align:right;color:' + T.textMuted + '">#' + rank + '<button class="slate-toggle" onclick="toggleSlateDetail(\'' + detailId + '\')" title="Show full details">▾</button></td>'
-      + '<td style="padding:8px 8px"><div style="font-weight:500;font-size:13px;color:' + T.textPrimary + '">' + ticker + '</div>' + (company ? '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:1px;line-height:1.3">' + company + '</div>' : '') + '</td>'
+      + '<td style="padding:8px 8px"><div style="font-weight:500;font-size:13px;color:' + T.textPrimary + '">' + ticker + warningBadge + '</div>' + (company ? '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:1px;line-height:1.3">' + company + '</div>' : '') + '</td>'
       + '<td class="slate-hide-mobile" style="padding:8px 8px"><span style="font-size:10px;padding:2px 7px;border-radius:4px;background:' + sectorColor + '22;color:' + sectorColor + ';font-weight:500;white-space:nowrap">' + sectorLabel + '</span></td>'
       + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.textPrimary + '">' + score.toFixed(2) + '</td>'
       + '<td class="slate-hide-mobile" style="padding:8px 8px;text-align:right;color:' + T.textPrimary + '">$' + entry.toFixed(2) + '</td>'
@@ -3585,6 +3590,7 @@ function buildSlateTable(rows, showLogBtn, T){
       + '<span>Risk: <b style="color:' + T.neutral + '">$' + risk + '</b></span>'
       + '<span>1W Ret: <b style="color:' + (ret1w>=0?T.win:T.loss) + '">' + (ret1w>=0?'+':'') + (ret1w*100).toFixed(1) + '%</b></span>'
       + '<span>RSI: <b style="color:' + T.textPrimary + '">' + rsi.toFixed(0) + '</b></span>'
+      + (warningRaw ? '<span>⚠ <b style="color:#c8890a">' + escHtml(warningRaw) + '</b></span>' : '')
       + '</div></td></tr>';
   });
 
