@@ -699,6 +699,21 @@ canvas{width:100%!important}
 </div>
 <div class="tagline">Systematic + Bucket 2, blended in dollars — this is the number that reflects total capital at risk</div>
 
+<div class="card" style="margin-bottom:1rem">
+  <div class="card-hdr">
+    <div>
+      <div class="ctitle" style="margin-bottom:2px">Trading bankroll cap</div>
+      <div style="font-size:11px;opacity:.5">Self-imposed ceiling for systematic + Bucket 2 combined — the rest stays in VTI/VXUS for stability</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:13px;opacity:.6">$</span>
+      <input id="ov-bankroll-input" type="number" min="0" step="500" style="width:110px;font-size:14px;padding:6px 8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;text-align:right">
+      <button onclick="saveBankrollCap(document.getElementById('ov-bankroll-input').value)" style="font-size:11px;padding:6px 10px;border-radius:6px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;cursor:pointer;min-height:36px">Save</button>
+    </div>
+  </div>
+  <div id="ov-bankroll-usage" style="font-size:12px"></div>
+</div>
+
 <div class="grid-4" style="margin-bottom:.75rem">
   <div class="metric metric-slim"><div class="lbl">Total P&amp;L</div><div class="val" id="ov-m-pnl">—</div><div class="sub" id="ov-m-split">sys $0 · bucket2 $0</div></div>
   <div class="metric metric-slim"><div class="lbl">Win rate</div><div class="val" id="ov-m-wr">—</div><div class="sub" id="ov-m-wl">0W / 0L</div></div>
@@ -793,7 +808,7 @@ canvas{width:100%!important}
       <div><span style="color:#1fba85">✓</span> Volume above average</div>
       <div><span style="color:#1fba85">✓</span> Not within 5% of 52W high</div>
       <div><span style="color:#1fba85">✓</span> Dollar volume &gt; $100M/day</div>
-      <div><span style="color:#1fba85">✓</span> $300-500 deployed per play (fixed)</div>
+      <div><span style="color:#1fba85">✓</span> Sized by tier: 1.5% / 1.0% / 0.5% of your trading bankroll cap (STRONG/SOLID/WATCH) — editable per trade</div>
       <div><span style="color:#1fba85">✓</span> Maximum hold: 3 weeks — exit regardless of P&amp;L</div>
       <div><span style="color:#1fba85">✓</span> Exit early if stop hits or thesis breaks</div>
     </div>
@@ -818,14 +833,17 @@ canvas{width:100%!important}
       <div><label style="font-size:11px;display:block;margin-bottom:4px">Ticker</label><input id="opp-in-ticker" placeholder="AAPL" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;text-transform:uppercase;box-sizing:border-box"></div>
       <div><label style="font-size:11px;display:block;margin-bottom:4px">Entry Date</label><input id="opp-in-date" type="date" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
       <div><label style="font-size:11px;display:block;margin-bottom:4px">Entry Price</label><input id="opp-in-price" type="number" step="0.01" placeholder="0.00" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
-      <div><label style="font-size:11px;display:block;margin-bottom:4px">Amount Deployed $</label><input id="opp-in-deployed" type="number" max="500" placeholder="500" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
+      <div><label style="font-size:11px;display:block;margin-bottom:4px">Amount Deployed $</label><input id="opp-in-deployed" type="number" min="0" placeholder="e.g. 400" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
+      <div><label style="font-size:11px;display:block;margin-bottom:4px">Stop Price</label><input id="opp-in-stop" type="number" step="0.01" placeholder="0.00" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
+      <div><label style="font-size:11px;display:block;margin-bottom:4px">Target Price</label><input id="opp-in-target" type="number" step="0.01" placeholder="0.00" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
     </div>
     <div style="margin-top:10px">
       <label style="font-size:11px;display:block;margin-bottom:4px">Notes</label>
       <textarea id="opp-in-notes" rows="2" placeholder="Why are you taking this? What signal did you see?" style="width:100%;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;resize:vertical;box-sizing:border-box"></textarea>
     </div>
     <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <button onclick="oppAddPlay()" style="min-width:80px;padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;min-height:44px">Save play</button>
+      <button onclick="oppAddPlay()" style="min-width:80px;padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;min-height:44px">Save as trade</button>
+      <button onclick="oppSaveAsCandidate()" style="min-width:80px;padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#888780;min-height:44px" title="Log this as considered but not taken — same as Skip, just from this form">Save as candidate (didn't trade)</button>
       <span id="opp-add-err" style="font-size:12px"></span>
     </div>
     <div id="opp-add-confirm"></div>
@@ -1193,7 +1211,7 @@ canvas{width:100%!important}
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Signal 1 — MOMENTUM</span><span style="font-size:12px;text-align:right">3W return ≥ 30% + accelerating + dv &gt; $50M/day</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Signal 2 — VOLUME_BREAK</span><span style="font-size:12px;text-align:right">Volume surge ≥ 5x normal + 3W ≥ 10% + dv &gt; $50M/day</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Manual criteria</span><span style="font-size:12px;text-align:right">3W return ≥ 20%, accelerating, volume confirmed, not within 5% of 52W high, $ volume &gt; $100M/day</span></div>
-  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Size</span><span style="font-size:12px">$300–500 deployed fixed (not risk-based)</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Size</span><span style="font-size:12px">1.5% / 1.0% / 0.5% of trading bankroll cap by tier (STRONG/SOLID/WATCH) — not risk-based, still editable per trade</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Max open</span><span style="font-size:12px">No hard cap — warns at 2-3 open, warns harder at 4+</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Exit</span><span style="font-size:12px">3-week maximum hold — see Exit rules below</span></div>
   <div class="c-filter-row" style="border-bottom:none"><span style="opacity:.6;font-size:12px">P&amp;L</span><span style="font-size:12px">Separate P&amp;L — never mixed with V2 systematic results</span></div>
@@ -1423,6 +1441,23 @@ let candidatePool = [];
 let prices  = {};
 let spyHistory = JSON.parse(localStorage.getItem('swingv3_spy')||'[]');  // stays local
 
+// Trading bankroll cap -- the dollar ceiling for systematic + Bucket 2
+// combined (a self-imposed % of total Roth, kept separate from the ~60%
+// left in VTI/VXUS). Persisted in settings/state alongside weekNum/regime/
+// intelOpen. Bucket 2's Tier-based sizing computes off this; the Overall
+// tab shows total deployed against it. Editing this never touches actual
+// positions -- it's just the ceiling you're measuring against.
+let bankrollCap = 30000;
+function saveBankrollCap(val){
+  const v = parseFloat(val);
+  if(isNaN(v) || v <= 0) return;
+  bankrollCap = v;
+  if(userRef) dbWrite(userRef.collection('settings').doc('state').set({weekNum, regime, intelOpen, bankrollCap}));
+  renderOpportunisticPlays();
+  const el = document.getElementById('opp-scan-output');
+  if(el && oppScanStore && oppScanStore.rows && oppScanStore.rows.length) renderOppScan();
+}
+
 // ── V1/V2 performance filter (Dashboard Performance Metrics + equity curve
 // only -- see the comment in render() for exactly what this does and
 // doesn't touch). Not persisted -- resets to 'all' on reload, since it's a
@@ -1529,7 +1564,7 @@ async function loadAllData(){
   if(!sSnap.exists&&!tCheckSnap.exists){
     await migrateFromLocalStorage();
   } else {
-    if(sSnap.exists){const s=sSnap.data();weekNum=s.weekNum||1;regime=s.regime||'BEAR_TREND';intelOpen=s.intelOpen!==false;}
+    if(sSnap.exists){const s=sSnap.data();weekNum=s.weekNum||1;regime=s.regime||'BEAR_TREND';intelOpen=s.intelOpen!==false;bankrollCap=s.bankrollCap||30000;}
     nSnap.forEach(doc=>{notesCache[doc.id]=doc.data().text||'';});
     // stock_weeks notes take precedence over legacy notes collection
     swSnap.forEach(doc=>{if(doc.data().note)notesCache[doc.id]=doc.data().note;});
@@ -1590,7 +1625,7 @@ async function migrateFromLocalStorage(){
   batch.set(userRef.collection('data').doc('trades'),{items:trades});
   batch.set(userRef.collection('data').doc('closed'),{items:closed});
   batch.set(userRef.collection('data').doc('weeks'),{items:weeks});
-  batch.set(userRef.collection('settings').doc('state'),{weekNum,regime,intelOpen});
+  batch.set(userRef.collection('settings').doc('state'),{weekNum,regime,intelOpen,bankrollCap});
   batch.set(userRef.collection('data').doc('slates'),{current:slatesStore.current||null,archive:slatesStore.archive||[]});
   await batch.commit();
   await Promise.all(Object.entries(notesCache).map(([wn,text])=>userRef.collection('notes').doc(wn).set({text})));
@@ -1639,7 +1674,7 @@ function save(){
   dbWrite(userRef.collection('data').doc('trades').set({items:trades}));
   dbWrite(userRef.collection('data').doc('closed').set({items:closed}));
   dbWrite(userRef.collection('data').doc('weeks').set({items:weeks}));
-  dbWrite(userRef.collection('settings').doc('state').set({weekNum,regime,intelOpen}));
+  dbWrite(userRef.collection('settings').doc('state').set({weekNum,regime,intelOpen,bankrollCap}));
   localStorage.setItem('swingv3_spy',JSON.stringify(spyHistory));  // stays local
 }
 function fmtP(n){return(n>=0?'+$':'-$')+Math.abs(n).toFixed(2)}
@@ -3309,7 +3344,7 @@ function archiveCurrentSlate(){
   slatesStore.current = null;
   weekNum = weekNum + 1;
   // Persist weekNum + regime to Firestore immediately
-  if(userRef) dbWrite(userRef.collection('settings').doc('state').set({weekNum, regime, intelOpen}));
+  if(userRef) dbWrite(userRef.collection('settings').doc('state').set({weekNum, regime, intelOpen, bankrollCap}));
   // Persist updated weeks[] to Firestore (needed when called directly from "Archive week" button)
   if(userRef) dbWrite(userRef.collection('data').doc('weeks').set({items:weeks}));
   // Update regime badge to reflect the new week's regime
@@ -4052,13 +4087,15 @@ function updateOppDeploy(inputEl){
 
 // Tier-based default sizing -- ties Deploy $ to the scanner's own
 // rule-based signal-strength measure (3W return / vol surge thresholds)
-// instead of a flat number or unstructured "conviction". Still fully
-// editable per row; this only sets the starting point.
+// instead of a flat number or unstructured "conviction" -- and now scaled
+// to bankrollCap (% of the 40%-of-Roth trading pool, not a flat dollar
+// range) so it moves automatically if the bankroll cap changes instead of
+// staying pinned to an old $300-500 range. Still fully editable per row;
+// this only sets the starting point.
+const OPP_TIER_PCT = { STRONG: 0.015, SOLID: 0.010, WATCH: 0.005 };
 function oppDefaultDeployForTier(tier){
-  if(tier === 'STRONG') return 500;
-  if(tier === 'SOLID') return 400;
-  if(tier === 'WATCH') return 300;
-  return 400;
+  const pct = OPP_TIER_PCT[tier] || OPP_TIER_PCT.SOLID;
+  return Math.round(bankrollCap * pct);
 }
 function oppTierBadge(tier){
   if(tier === 'STRONG') return '<span class="slate-badge" style="background:#E1F5EE;color:#085041;margin-left:4px">STRONG</span>';
@@ -4193,14 +4230,14 @@ function buildOppScanTable(rows, T){
         + 'style="width:66px;font-size:12px;padding:4px 6px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.metricBg + ';color:' + T.textPrimary + ';text-align:right">'
         + '</td>'
       + '<td style="padding:6px;text-align:right">'
-        + '<input type="number" step="1" min="300" max="500" value="' + deployVal + '" '
+        + '<input type="number" step="1" min="0" value="' + deployVal + '" '
         + 'id="opp-deploy-input-' + ticker + '" data-ticker="' + ticker + '" oninput="updateOppDeploy(this)" '
         + 'style="width:60px;font-size:12px;padding:4px 6px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.metricBg + ';color:' + T.textPrimary + ';text-align:right">'
         + '</td>'
       + '<td style="padding:6px;text-align:center" id="opp-status-cell-' + ticker + '">' + statusBadgeHtml(status, T) + '</td>'
       + '<td style="padding:6px" id="opp-scan-action-cell-' + ticker + '" data-entry="' + entry + '">'
         + '<div style="display:flex;gap:4px">'
-        + '<button onclick="oppPrefillFromScan(\'' + ticker + '\',' + entry + ')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">→ log</button>'
+        + '<button onclick="oppPrefillFromScan(\'' + ticker + '\',' + entry + ',' + stop + ',' + tgt + ')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">→ log</button>'
         + '<button onclick="showOppSkipMenu(\'' + ticker + '\')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textMuted + '">Skip</button>'
         + '</div>'
         + '</td>'
@@ -4208,7 +4245,7 @@ function buildOppScanTable(rows, T){
   });
 
   html += '</tbody></table></div>';
-  html += '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:6px;font-style:italic">Status is computed from your manual criteria (3W≥20%, accelerating, not within 5% of 52W high, $vol&gt;$100M) plus Live $ vs Max Entry. * Max Entry reuses the systematic model\'s backtested 0.6% chase threshold as a placeholder — not independently validated for Bucket 2. Deploy $ defaults by Tier (STRONG→$500, SOLID→$400, WATCH→$300) — still editable per row. Max 2 open at any time, regardless of how many say TRADE. → log pre-fills the form below; Skip logs a reason without taking the trade, so re-loading this scan later shows what you\'ve already decided on each name.</div>';
+  html += '<div style="font-size:10px;color:' + T.textMuted + ';margin-top:6px;font-style:italic">Status is computed from your manual criteria (3W≥20%, accelerating, not within 5% of 52W high, $vol&gt;$100M) plus Live $ vs Max Entry. * Max Entry reuses the systematic model\'s backtested 0.6% chase threshold as a placeholder — not independently validated for Bucket 2. Deploy $ defaults by Tier as 1.5%/1.0%/0.5% of your trading bankroll cap (STRONG/SOLID/WATCH — currently $' + bankrollCap.toLocaleString() + ') — still editable per row. Max 2 open at any time, regardless of how many say TRADE. → log pre-fills the form below; Skip logs a reason without taking the trade, so re-loading this scan later shows what you\'ve already decided on each name.</div>';
   return html;
 }
 
@@ -4226,7 +4263,7 @@ function renderOppScan(){
   outputEl.innerHTML = buildOppScanTable(oppScanStore.rows, T);
 }
 
-function oppPrefillFromScan(ticker, entryPrice){
+function oppPrefillFromScan(ticker, entryPrice, stopPrice, targetPrice){
   const formEl = document.getElementById('opp-log-form');
   if(formEl && formEl.style.display === 'none') formEl.style.display = 'block';
   const dEl = document.getElementById('opp-in-date');
@@ -4235,6 +4272,10 @@ function oppPrefillFromScan(ticker, entryPrice){
   if(tEl) tEl.value = ticker;
   const pEl = document.getElementById('opp-in-price');
   if(pEl) pEl.value = entryPrice;
+  const stopEl = document.getElementById('opp-in-stop');
+  if(stopEl && stopPrice !== undefined && !isNaN(stopPrice)) stopEl.value = stopPrice;
+  const targetEl = document.getElementById('opp-in-target');
+  if(targetEl && targetPrice !== undefined && !isNaN(targetPrice)) targetEl.value = targetPrice;
   // Read the scan row's own Deploy $ input directly rather than only
   // oppScanStore.deployed[ticker] -- that only gets set once the user
   // actually edits the field, so an untouched tier-based default (e.g.
@@ -4270,31 +4311,47 @@ function oppToggleLogForm(){
   }
 }
 
-async function oppAddPlay(){
-  const T = THEME;
-  const errEl = document.getElementById('opp-add-err');
-  if(errEl) errEl.textContent = '';
+function oppReadLogForm(){
   const ticker = (document.getElementById('opp-in-ticker').value || '').trim().toUpperCase();
   const entryDate = document.getElementById('opp-in-date').value || new Date().toISOString().slice(0,10);
   const entryPrice = parseFloat(document.getElementById('opp-in-price').value);
   const deployed = parseFloat(document.getElementById('opp-in-deployed').value);
+  const stopRaw = document.getElementById('opp-in-stop').value;
+  const targetRaw = document.getElementById('opp-in-target').value;
+  const stopPrice = stopRaw === '' ? null : parseFloat(stopRaw);
+  const targetPrice = targetRaw === '' ? null : parseFloat(targetRaw);
   const notes = (document.getElementById('opp-in-notes').value || '').trim();
+  return { ticker, entryDate, entryPrice, deployed, stopPrice, targetPrice, notes };
+}
 
-  if(!ticker){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Ticker is required.';} return; }
-  if(isNaN(entryPrice) || entryPrice <= 0){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Entry price must be > 0.';} return; }
-  if(isNaN(deployed) || deployed <= 0){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Amount deployed must be > 0.';} return; }
+function oppClearLogForm(){
+  ['opp-in-ticker','opp-in-price','opp-in-deployed','opp-in-stop','opp-in-target','opp-in-notes'].forEach(id => {
+    const e = document.getElementById(id); if(e) e.value = '';
+  });
+}
+
+async function oppAddPlay(){
+  const T = THEME;
+  const errEl = document.getElementById('opp-add-err');
+  if(errEl) errEl.textContent = '';
+  const f = oppReadLogForm();
+
+  if(!f.ticker){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Ticker is required.';} return; }
+  if(isNaN(f.entryPrice) || f.entryPrice <= 0){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Entry price must be > 0.';} return; }
+  if(isNaN(f.deployed) || f.deployed <= 0){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Amount deployed must be > 0.';} return; }
 
   const play = {
     id: Date.now().toString(),
-    ticker, entryDate, entryPrice, deployed, notes,
+    ticker: f.ticker, entryDate: f.entryDate, entryPrice: f.entryPrice, deployed: f.deployed,
+    stopPrice: (f.stopPrice !== null && !isNaN(f.stopPrice)) ? f.stopPrice : null,
+    targetPrice: (f.targetPrice !== null && !isNaN(f.targetPrice)) ? f.targetPrice : null,
+    notes: f.notes,
     status: 'open',
     exitDate: null, exitPrice: null, realizedPnl: null,
   };
   opportunisticPlays.push(play);
   saveOpportunisticPlays();
-  ['opp-in-ticker','opp-in-price','opp-in-deployed','opp-in-notes'].forEach(id => {
-    const e = document.getElementById(id); if(e) e.value = '';
-  });
+  oppClearLogForm();
   const formEl = document.getElementById('opp-log-form');
   if(formEl) formEl.style.display = 'none';
   renderOpportunisticPlays();
@@ -4303,10 +4360,49 @@ async function oppAddPlay(){
   // Change 3: success confirmation with the exit-reminder download
   const confirmEl = document.getElementById('opp-add-confirm');
   if(confirmEl){
-    const stopGuess = oppLookupStopPrice(play.ticker);
+    // Prefer the stop you actually just logged over the CSV best-effort
+    // lookup -- now that the form captures it, this is real data, not a guess.
+    const stopGuess = play.stopPrice !== null ? play.stopPrice : oppLookupStopPrice(play.ticker);
     confirmEl.innerHTML = '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:rgba(31,186,133,0.08);border:.5px solid rgba(31,186,133,0.2);font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
-      + '<span style="color:' + T.win + '">✓ ' + escHtml(play.ticker) + ' logged</span>'
+      + '<span style="color:' + T.win + '">✓ ' + escHtml(play.ticker) + ' logged as a trade</span>'
       + reminderButtonHtml(T, play.ticker, play.entryDate, play.entryPrice, stopGuess)
+      + '</div>';
+  }
+}
+
+// "Save as candidate" -- logs the same form as a 'skipped' record (reason
+// pulled from Notes, or a default) instead of an open position. Same
+// underlying path as the Skip button on the scan table, just reachable
+// from inside the form once you've already started filling it in.
+async function oppSaveAsCandidate(){
+  const T = THEME;
+  const errEl = document.getElementById('opp-add-err');
+  if(errEl) errEl.textContent = '';
+  const f = oppReadLogForm();
+
+  if(!f.ticker){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Ticker is required.';} return; }
+  if(isNaN(f.entryPrice) || f.entryPrice <= 0){ if(errEl){errEl.style.color=T.loss;errEl.textContent='Entry price must be > 0.';} return; }
+
+  const play = {
+    id: Date.now().toString(),
+    ticker: f.ticker, entryDate: f.entryDate, entryPrice: f.entryPrice,
+    stopPrice: (f.stopPrice !== null && !isNaN(f.stopPrice)) ? f.stopPrice : null,
+    targetPrice: (f.targetPrice !== null && !isNaN(f.targetPrice)) ? f.targetPrice : null,
+    deployed: null, notes: f.notes,
+    status: 'skipped', skipReason: f.notes || 'Logged as candidate from form',
+    exitDate: null, exitPrice: null, realizedPnl: null,
+  };
+  opportunisticPlays.push(play);
+  saveOpportunisticPlays();
+  oppClearLogForm();
+  const formEl = document.getElementById('opp-log-form');
+  if(formEl) formEl.style.display = 'none';
+  renderOpportunisticPlays();
+
+  const confirmEl = document.getElementById('opp-add-confirm');
+  if(confirmEl){
+    confirmEl.innerHTML = '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:' + T.metricBg + ';border:.5px solid ' + T.cardBorder + ';font-size:12px;color:' + T.textMuted + '">'
+      + escHtml(play.ticker) + ' logged as a candidate — not traded'
       + '</div>';
   }
 }
@@ -4449,7 +4545,9 @@ function renderOppOpenList(){
     const hold = bucket2HoldInfo(p.entryDate);
     const remLabel = bucket2RemainingLabel(hold.daysRemaining);
     const exitByStr = hold.exitBy.toISOString().slice(0,10);
-    const stopGuess = oppLookupStopPrice(p.ticker);
+    // Prefer the stop actually logged with this play over the CSV
+    // best-effort lookup, now that the log form captures it directly.
+    const stopGuess = (p.stopPrice !== undefined && p.stopPrice !== null) ? p.stopPrice : oppLookupStopPrice(p.ticker);
     return '<div class="slate-card" style="margin-bottom:.5rem">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px">'
       + '<span class="tkr">' + escHtml(p.ticker) + '</span>'
@@ -4644,10 +4742,31 @@ function renderOverallMetrics(){
   const sysDeployed = (trades||[]).reduce((s,t) => s + t.entry*t.shares, 0);
   const oppOpen = opportunisticPlays.filter(p => p.status === 'open');
   const oppDeployed = oppOpen.reduce((s,p) => s + (p.deployed||0), 0);
+  const totalDeployed = sysDeployed + oppDeployed;
   const deployEl = document.getElementById('ov-m-deployed');
-  if(deployEl) deployEl.textContent = '$' + Math.round(sysDeployed + oppDeployed).toLocaleString();
+  if(deployEl) deployEl.textContent = '$' + Math.round(totalDeployed).toLocaleString();
   const deploySubEl = document.getElementById('ov-m-deployed-sub');
   if(deploySubEl) deploySubEl.textContent = 'sys $' + Math.round(sysDeployed).toLocaleString() + ' (' + (trades||[]).length + ') · bucket2 $' + Math.round(oppDeployed).toLocaleString() + ' (' + oppOpen.length + ')';
+
+  // Bankroll cap card -- input reflects the loaded/saved value, usage bar
+  // shows deployed vs. the self-imposed ceiling (systematic + Bucket 2
+  // combined, per the 40%-of-Roth rule -- this never blocks logging a
+  // trade, it's informational the same way every other warning in this
+  // dashboard is).
+  const bankInputEl = document.getElementById('ov-bankroll-input');
+  if(bankInputEl && document.activeElement !== bankInputEl) bankInputEl.value = bankrollCap;
+  const usageEl = document.getElementById('ov-bankroll-usage');
+  if(usageEl){
+    const pctUsed = bankrollCap > 0 ? (totalDeployed / bankrollCap) * 100 : 0;
+    const barColor = pctUsed >= 100 ? T.loss : pctUsed >= 80 ? T.neutral : T.win;
+    usageEl.innerHTML = '<div style="display:flex;justify-content:space-between;margin-bottom:4px;color:' + T.textMuted + '">'
+      + '<span>$' + Math.round(totalDeployed).toLocaleString() + ' of $' + Math.round(bankrollCap).toLocaleString() + ' deployed</span>'
+      + '<span style="color:' + barColor + ';font-weight:500">' + pctUsed.toFixed(0) + '%</span>'
+      + '</div>'
+      + '<div style="height:6px;background:' + T.progressTrack + ';border-radius:3px;overflow:hidden">'
+      + '<div style="height:6px;width:' + Math.min(pctUsed,100).toFixed(1) + '%;background:' + barColor + ';border-radius:3px"></div>'
+      + '</div>';
+  }
 
   const countEl = document.getElementById('ov-m-count');
   if(countEl) countEl.textContent = tot;
@@ -4789,7 +4908,7 @@ function renderOppMetrics(){
 
   // Max drawdown — dollar peak-to-trough on cumulative realized P&L, sorted
   // by exit date. Dollar (not %) since Bucket 2 has no account-equity
-  // baseline to express a percentage against (fixed $300-500 sizing).
+  // baseline to express a percentage against (tier-% of bankroll cap sizing).
   const sortedClosed = [...closed].filter(p => p.exitDate).sort((a,b) => new Date(a.exitDate) - new Date(b.exitDate));
   let cur = 0, peak = 0, maxDD = 0;
   sortedClosed.forEach(p => {

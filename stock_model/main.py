@@ -141,7 +141,7 @@ OPP_MIN_PRICE = 10.0             # both signals: min price
 OPP_MAX_ATR_PCT = 0.20           # both signals: max ATR% (volatility cap)
 OPP_TOP_N = 10
 
-OPP_SIZING_NOTE = "$300-500 deployed (fixed, not risk-based)"
+OPP_SIZING_NOTE = "1.5% / 1.0% / 0.5% of bankroll cap by Tier (STRONG/SOLID/WATCH)"
 
 OPP_CSV_COLUMNS = [
     "Rank", "Ticker", "Universe", "Signal", "Tier", "Score",
@@ -1370,9 +1370,9 @@ def print_opportunity_table(
     print(">>>")
     print_concentration_warnings(candidates)
     print(">>>")
-    print(f">>> Sizing: {OPP_SIZING_NOTE.split(' (')[0]} per play (fixed)")
+    print(f">>> Sizing: {OPP_SIZING_NOTE}")
     print_bucket2_open_warning(open_count)
-    print(">>> Size each play at $300-500 deployed — your judgment on how many to hold simultaneously")
+    print(">>> Deploy $ = bankroll cap x tier % (see dashboard for live $ amounts and usage vs. cap)")
     print(">>> No mandatory Friday exit — hold until thesis breaks")
     print(">>> These are NOT systematic V2 trades — discretionary only")
 
