@@ -323,7 +323,7 @@ canvas{width:100%!important}
 <!-- ── LOGIN SCREEN ── -->
 <div id="login-screen" style="position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;display:flex;align-items:center;justify-content:center;background:#0f0f0e">
   <div style="text-align:center;max-width:300px;width:100%;padding:2rem">
-    <div style="font-size:20px;font-weight:500;color:#e8e6e0;margin-bottom:6px">Swing model</div>
+    <div style="font-size:20px;font-weight:500;color:#e8e6e0;margin-bottom:6px">Trading Desk</div>
     <div style="font-size:12px;color:rgba(255,255,255,.4);margin-bottom:2rem">Trading dashboard</div>
     <button onclick="loginUser()"
       style="width:100%;padding:10px 14px;border-radius:8px;border:.5px solid rgba(255,255,255,.15);background:#fff;color:#3c4043;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;box-sizing:border-box">
@@ -365,7 +365,7 @@ canvas{width:100%!important}
 <!-- HEADER -->
 <div class="hdr">
   <div>
-    <span style="font-size:18px;font-weight:500">Swing model</span>
+    <span style="font-size:18px;font-weight:500">Trading Desk</span>
     <!-- regime badge removed from view per V2 (regime no longer blocks trading) — element kept
          in the DOM (hidden) so existing render()/updateLiveDisplay() JS keeps working untouched -->
     <span id="regime-badge" class="badge badge-unk" style="display:none">loading...</span>
@@ -471,6 +471,30 @@ canvas{width:100%!important}
     </details>
 
   </div>
+</div>
+
+<!-- Bucket 2 performance breakout — its own stat cards + equity curve,
+     computed only from opportunisticPlays, never touching trades[]/closed[]
+     or the systematic m-pnl/m-wr/m-pf/m-dd calculations. -->
+<div class="card" style="margin-bottom:1rem">
+  <div class="card-hdr">
+    <div>
+      <div class="ctitle" style="margin-bottom:2px">📊 Bucket 2 performance</div>
+      <div style="font-size:11px;opacity:.5">Separate from systematic results — never blended into the metrics above</div>
+    </div>
+  </div>
+  <div class="grid-4" style="margin-bottom:.75rem">
+    <div class="metric metric-slim"><div class="lbl">Total P&amp;L</div><div class="val" id="opp-m-pnl">—</div><div class="sub" id="opp-m-deployed">$0 deployed now</div></div>
+    <div class="metric metric-slim"><div class="lbl">Win rate</div><div class="val" id="opp-m-wr">—</div><div class="sub" id="opp-m-wl">0W / 0L</div></div>
+    <div class="metric metric-slim"><div class="lbl">Profit Factor</div><div class="val" id="opp-m-pf">—</div><div class="sub" id="opp-m-pf-sub">gross W / gross L</div></div>
+    <div class="metric metric-slim"><div class="lbl">Max Drawdown</div><div class="val" id="opp-m-dd">—</div><div class="sub">peak to trough ($)</div></div>
+  </div>
+  <div class="card-hdr" style="margin-bottom:.4rem">
+    <div class="ctitle" style="margin-bottom:0">Bucket 2 equity curve</div>
+    <div style="font-size:11px;text-align:right" id="opp-eq-vs-start">—</div>
+  </div>
+  <div style="position:relative;height:140px"><canvas id="opp-eq-chart"></canvas></div>
+  <div style="font-size:11px;opacity:.5;margin-top:6px;text-align:center" id="opp-eq-empty">No closed plays yet — this fills in as Bucket 2 trades close.</div>
 </div>
 
 <!-- ══════════════════════════════════════
@@ -4255,6 +4279,145 @@ function renderOpportunisticPlays(){
   renderOppOverdueBanner();
   renderOppOpenList();
   renderOppClosedList();
+  renderOppMetrics();
+  buildOppEquityChart();
+}
+
+// ── Bucket 2 performance breakout — own stat cards, own equity curve.
+// Reads only opportunisticPlays; never touches trades[]/closed[] or the
+// systematic m-pnl/m-wr/m-pf/m-dd elements. Mirrors renderCryptoMetrics()'s
+// formulas (same PF/win-rate/drawdown logic, proven pattern) rather than
+// reinventing them, since this dashboard already keeps two model bucket's
+// stats side by side that way.
+function renderOppMetrics(){
+  const T = THEME;
+  const closed = opportunisticPlays.filter(p => p.status === 'closed');
+  const tot = closed.length;
+  const wins = closed.filter(p => (p.realizedPnl||0) > 0).length;
+  const losses = tot - wins;
+  const totalPnl = closed.reduce((s,p) => s + (p.realizedPnl||0), 0);
+  const grossW = closed.filter(p => (p.realizedPnl||0) > 0).reduce((s,p) => s + p.realizedPnl, 0);
+  const grossL = Math.abs(closed.filter(p => (p.realizedPnl||0) <= 0).reduce((s,p) => s + p.realizedPnl, 0));
+
+  const pnlEl = document.getElementById('opp-m-pnl');
+  if(pnlEl){ pnlEl.textContent = tot ? fmtP(totalPnl) : '—'; pnlEl.style.color = totalPnl >= 0 ? T.win : T.loss; }
+
+  const open = opportunisticPlays.filter(p => p.status === 'open');
+  const deployedNow = open.reduce((s,p) => s + (p.deployed||0), 0);
+  const deployEl = document.getElementById('opp-m-deployed');
+  if(deployEl) deployEl.textContent = '$' + deployedNow.toFixed(0) + ' deployed now (' + open.length + ' open)';
+
+  const wrEl = document.getElementById('opp-m-wr');
+  if(wrEl){
+    wrEl.textContent = tot ? Math.round(wins/tot*100) + '%' : '—';
+    wrEl.style.color = tot ? (wins/tot >= 0.5 ? T.win : T.loss) : T.textPrimary;
+  }
+  const wlEl = document.getElementById('opp-m-wl');
+  if(wlEl) wlEl.textContent = wins + 'W / ' + losses + 'L';
+
+  const pf = tot ? (grossL > 0 ? (grossW/grossL).toFixed(2) : '∞') : '—';
+  const pfEl = document.getElementById('opp-m-pf');
+  if(pfEl){
+    pfEl.textContent = pf;
+    pfEl.style.color = !tot ? T.textPrimary : parseFloat(pf) >= 1.3 ? T.win : parseFloat(pf) >= 1.0 ? T.neutral : T.loss;
+  }
+  const pfSubEl = document.getElementById('opp-m-pf-sub');
+  if(pfSubEl) pfSubEl.textContent = tot ? '$' + grossW.toFixed(0) + 'W / $' + grossL.toFixed(0) + 'L' : 'gross W / gross L';
+
+  // Max drawdown — dollar peak-to-trough on cumulative realized P&L, sorted
+  // by exit date. Dollar (not %) since Bucket 2 has no account-equity
+  // baseline to express a percentage against (fixed $300-500 sizing).
+  const sortedClosed = [...closed].filter(p => p.exitDate).sort((a,b) => new Date(a.exitDate) - new Date(b.exitDate));
+  let cur = 0, peak = 0, maxDD = 0;
+  sortedClosed.forEach(p => {
+    cur += (p.realizedPnl||0);
+    if(cur > peak) peak = cur;
+    const dd = peak - cur;
+    if(dd > maxDD) maxDD = dd;
+  });
+  const ddEl = document.getElementById('opp-m-dd');
+  if(ddEl){
+    ddEl.textContent = tot ? '-$' + maxDD.toFixed(0) : '—';
+    ddEl.style.color = maxDD > 200 ? T.loss : maxDD > 75 ? T.neutral : T.textPrimary;
+  }
+}
+
+let oppEqChart = null;
+function buildOppEquityChart(){
+  const T = THEME;
+  const canvas = document.getElementById('opp-eq-chart');
+  if(!canvas) return;
+
+  const closed = opportunisticPlays.filter(p => p.status === 'closed' && p.exitDate)
+    .sort((a,b) => new Date(a.exitDate) - new Date(b.exitDate));
+
+  const emptyEl = document.getElementById('opp-eq-empty');
+  if(!closed.length){
+    if(emptyEl) emptyEl.style.display = 'block';
+    canvas.style.display = 'none';
+    const vsEl = document.getElementById('opp-eq-vs-start');
+    if(vsEl) vsEl.textContent = '—';
+    if(oppEqChart){ oppEqChart.destroy(); oppEqChart = null; }
+    return;
+  }
+  if(emptyEl) emptyEl.style.display = 'none';
+  canvas.style.display = '';
+
+  const pts = [{ label: 'Start', equity: 0 }];
+  let cur = 0;
+  closed.forEach(p => {
+    cur += (p.realizedPnl||0);
+    pts.push({ label: (p.exitDate||'').slice(5) || p.ticker, equity: Math.round(cur*100)/100 });
+  });
+
+  const labels = pts.map(p => p.label);
+  const equities = pts.map(p => p.equity);
+  const final = equities[equities.length-1];
+
+  const vsEl = document.getElementById('opp-eq-vs-start');
+  if(vsEl){
+    vsEl.textContent = (final >= 0 ? '+' : '') + '$' + final.toFixed(2) + ' total';
+    vsEl.style.color = final >= 0 ? T.win : T.loss;
+  }
+
+  if(oppEqChart){ oppEqChart.destroy(); oppEqChart = null; }
+
+  oppEqChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Bucket 2 cumulative P&L',
+        data: equities,
+        borderWidth: 2,
+        pointRadius: 3,
+        pointBackgroundColor: equities.map(v => v >= 0 ? T.chartLineUp : T.chartLineDown),
+        fill: false,
+        tension: 0.1,
+        segment: { borderColor: ctx => ctx.p1.parsed.y >= 0 ? T.chartLineUp : T.chartLineDown },
+      }],
+    },
+    options: {
+      animation: false,
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: T.cardBg,
+          titleColor: T.textMuted,
+          bodyColor: T.textPrimary,
+          borderColor: T.cardBorder,
+          borderWidth: 1,
+          callbacks: { label: ctx => 'Cumulative: ' + fmtP(ctx.parsed.y) },
+        },
+      },
+      scales: {
+        x: { grid: { color: T.chartGridColor }, ticks: { color: T.textMuted } },
+        y: { position: 'right', grid: { color: T.chartGridColor }, ticks: { color: T.textMuted, callback: v => '$' + v.toFixed(0) } },
+      },
+    },
+  });
 }
 
 // ── week date-range helper, used only for the Weekly Notes opportunistic-P&L line ──
