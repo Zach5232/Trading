@@ -272,7 +272,70 @@ def update_candidate_pool(uid: str, date_str: str, rows: list[dict]) -> int:
     return written
 
 
-def main():
+BUCKET2_MAX_HOLD_DAYS = 21
+BUCKET2_EXIT_SOON_THRESHOLD = 7  # days remaining at or below this = "exit this week"
+
+
+def run_bucket2_exit_alerts() -> None:
+    """
+    Bucket 2 3-week-hold exit check. Deliberately independent of the
+    systematic weekly-close flow above it (and everything that flow can
+    early-return on: sit-out weeks, market not closed yet) -- Bucket 2
+    positions aren't gated on the systematic model's schedule, so this
+    still needs to warn on a sit-out week. Read-only: only ever reads
+    users/{uid}/data/opportunisticPlays, never writes to it (that
+    collection's schema and write path are untouched, per spec).
+    """
+    uid = load_uid()
+    if not uid:
+        return
+
+    db = get_firestore_client()
+    doc_ref = db.collection("users").document(uid).collection("data").document("opportunisticPlays")
+    doc = doc_ref.get()
+    items = doc.to_dict().get("items", []) if doc.exists else []
+    open_plays = [p for p in items if p.get("status") == "open" and p.get("entryDate")]
+    if not open_plays:
+        return
+
+    today = datetime.now().date()
+    exit_this_week, overdue, ok = [], [], []
+    for p in open_plays:
+        ticker = p.get("ticker", "?")
+        entry_date = datetime.strptime(p["entryDate"], "%Y-%m-%d").date()
+        days_held = (today - entry_date).days
+        exit_by = entry_date + timedelta(days=BUCKET2_MAX_HOLD_DAYS)
+        days_remaining = BUCKET2_MAX_HOLD_DAYS - days_held
+        rec = {
+            "ticker": ticker,
+            "entry_date": p["entryDate"],
+            "exit_by": exit_by.strftime("%Y-%m-%d"),
+            "days_held": days_held,
+            "days_remaining": days_remaining,
+        }
+        if days_remaining <= 0:
+            overdue.append(rec)
+        elif days_remaining <= BUCKET2_EXIT_SOON_THRESHOLD:
+            exit_this_week.append(rec)
+        else:
+            ok.append(rec)
+
+    print("\n=== BUCKET 2 — EXIT ALERTS ===")
+    if exit_this_week:
+        print("⚠ EXIT THIS WEEK:")
+        for r in exit_this_week:
+            print(f"  {r['ticker']}: entered {r['entry_date']}, exit by {r['exit_by']} ({r['days_held']} days held)")
+    if overdue:
+        print("\n🚨 OVERDUE — EXIT IMMEDIATELY:")
+        for r in overdue:
+            print(f"  {r['ticker']}: entered {r['entry_date']}, held {r['days_held']} days ({-r['days_remaining']} days overdue)")
+    if ok:
+        print("\n✓ OK — plenty of time:")
+        for r in ok:
+            print(f"  {r['ticker']}: entered {r['entry_date']}, {r['days_held']} days held, {r['days_remaining']} days remaining")
+
+
+def run_systematic_close():
     target_date = sys.argv[1] if len(sys.argv) > 1 else None
     csv_path = find_candidates_csv(target_date)
     date_str = _CANDIDATES_FILENAME_RE.match(csv_path.name).group(1)
@@ -355,6 +418,11 @@ def main():
     print("=== SUMMARY ===")
     print(f"Wins: {wins} | Losses: {losses} | Avg R: {fmt_r(avg_r)}")
     print(f"Firestore updated: {written} record{'s' if written != 1 else ''} written")
+
+
+def main():
+    run_systematic_close()
+    run_bucket2_exit_alerts()
 
 
 if __name__ == "__main__":

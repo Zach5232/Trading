@@ -293,10 +293,15 @@ canvas{width:100%!important}
 .slate-detail-row{display:none}
 .slate-detail-row.open{display:table-row}
 .slate-toggle{cursor:pointer;background:transparent;border:none;color:inherit;opacity:.55;font-size:11px;padding:0 0 0 4px}
+.slate-action-abbrev{display:none}
+.slate-action-abbrev-legend{display:none}
 @media(max-width:640px){
   .slate-hide-mobile{display:none}
   .slate-sizing-full{display:none}
   .slate-sizing-abbrev{display:inline}
+  .slate-action-full{display:none!important}
+  .slate-action-abbrev{display:flex!important}
+  .slate-action-abbrev-legend{display:inline}
 }
 .grid-6{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
 .grid-equity{display:grid;grid-template-columns:1fr 210px;gap:1rem}
@@ -342,8 +347,8 @@ canvas{width:100%!important}
 
 <!-- ── MAIN TAB NAV ── -->
 <div id="main-tab-nav" style="display:flex;gap:6px;margin-bottom:.4rem;overflow-x:auto;padding-bottom:2px">
-  <button id="tab-btn-stock" class="tab-btn active" onclick="showMainTab('stock')" style="white-space:nowrap">📈 Stock</button>
-  <button id="tab-btn-pool" class="tab-btn" onclick="showMainTab('pool')" style="white-space:nowrap">🎯 Candidate Pool</button>
+  <button id="tab-btn-dashboard" class="tab-btn active" onclick="showMainTab('dashboard')" style="white-space:nowrap">📊 Dashboard</button>
+  <button id="tab-btn-execute" class="tab-btn" onclick="showMainTab('execute')" style="white-space:nowrap">⚡ Execute</button>
   <button id="tab-btn-howto" class="tab-btn" onclick="showMainTab('howto')" style="white-space:nowrap">📖 How to Use</button>
   <button id="more-nav-btn" class="tab-btn" onclick="toggleMoreDropdown(event)" style="white-space:nowrap">More ▾</button>
 </div>
@@ -354,8 +359,8 @@ canvas{width:100%!important}
 <!-- ── SLIM STATUS BAR (Week · Regime · Date) — informational only, no badge styling ── -->
 <div id="week-status-bar" class="sub" style="margin:0 0 .9rem 2px;font-size:11px">—</div>
 
-<!-- ── STOCK TAB WRAPPER ── -->
-<div id="main-stock">
+<!-- ── DASHBOARD TAB WRAPPER ── -->
+<div id="main-dashboard">
 
 <!-- HEADER -->
 <div class="hdr">
@@ -426,67 +431,6 @@ canvas{width:100%!important}
   <div style="font-size:12px;margin-top:8px;text-align:center" id="week-no-trades">Add trades Monday to see live P&amp;L here.</div>
 </div>
 
-<!-- LOG A TRADE -->
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Log a trade</div>
-<div class="card">
-  <div class="ctitle">Add trade</div>
-  <div class="entry-form">
-    <div><label>Ticker</label><input id="in-t" placeholder="AAPL" style="text-transform:uppercase"></div>
-    <div><label>Entry $</label><input id="in-e" type="number" placeholder="150.00" step="0.01"></div>
-    <div><label>Stop $</label><input id="in-s" type="number" placeholder="144.00" step="0.01"></div>
-    <div><label>Target $</label><input id="in-tg" type="number" placeholder="162.00" step="0.01"></div>
-    <div><label>Shares</label><input id="in-sh" type="number" placeholder="10"></div>
-  </div>
-  <div style="margin-top:8px;display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end">
-    <div>
-      <label style="font-size:11px">Sector</label>
-      <select id="in-sec" style="font-size:13px;padding:6px 8px;border-radius:8px;border:.5px solid;width:100%">
-        <option>Technology</option><option>Healthcare</option><option>Financials</option>
-        <option>Consumer</option><option>Industrials</option><option>Energy</option>
-        <option>Materials</option><option>Utilities</option><option>Real Estate</option><option>Telecom</option><option>Other</option>
-      </select>
-    </div>
-    <button onclick="addTrade()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;height:34px">+ add</button>
-  </div>
-  <div style="margin-top:6px"><span id="add-err" style="font-size:12px"></span></div>
-</div>
-
-<!-- ══════════════════════════════════════
-     2 — MONDAY MODEL OUTPUT
-     ══════════════════════════════════════ -->
-
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Monday model output</div>
-<div class="card" id="slate-loader-card">
-  <div class="card-hdr">
-    <div>
-      <div class="ctitle" style="margin-bottom:2px">This week's model candidates</div>
-      <div style="font-size:11px" id="slate-file-label">No file loaded — run <code style="font-size:11px">python src/main.py</code> then load the CSV</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-      <span id="slate-regime-tag" style="display:none;font-size:11px;padding:2px 9px;border-radius:8px;font-weight:500"></span>
-      <button id="slate-archive-btn" onclick="archiveCurrentSlate()" style="display:none;font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Save this week's candidates and start fresh for next week">📁 Archive week</button>
-      <button onclick="nextWeek()" style="font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Advance to next week and reset the live view">Advance week →</button>
-      <label style="cursor:pointer">
-        <input type="file" id="slate-file-input" accept=".csv" style="display:none" onchange="loadSlateCSV(this)">
-        <span class="rbtn" style="display:inline-block">📂 Load Monday slate</span>
-      </label>
-    </div>
-  </div>
-  <div id="slate-model-output"></div>
-
-  <!-- HISTORY: inline, hidden until archive has entries -->
-  <div id="slate-history-section" style="display:none;margin-top:1rem;padding-top:.75rem;border-top:.5px solid">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-      <span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;opacity:.5">Past weeks</span>
-      <select id="slate-history-select" onchange="renderSlateHistory(this.value)"
-        style="font-size:12px;padding:4px 8px;border-radius:8px;border:.5px solid;cursor:pointer">
-        <option value="">— view a past week —</option>
-      </select>
-    </div>
-    <div id="slate-history-output"></div>
-  </div>
-</div>
-
 <!-- ══════════════════════════════════════
      3 — PERFORMANCE METRICS (slim)
      ══════════════════════════════════════ -->
@@ -510,60 +454,17 @@ canvas{width:100%!important}
 <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Bucket 2</div>
 <div class="card" id="opp-plays-card">
   <div class="card-hdr">
-    <div class="ctitle">🎯 Opportunistic plays</div>
+    <div class="ctitle">🎯 Opportunistic plays — open</div>
     <button class="toggle-btn" id="opp-toggle" onclick="oppToggleSection()">hide ▲</button>
   </div>
   <div id="opp-body">
 
-    <!-- Part A: criteria reminder -->
-    <div style="border-radius:8px;padding:.7rem .9rem;margin-bottom:.85rem;background:rgba(31,186,133,0.06);border:.5px solid rgba(31,186,133,0.15)">
-      <div style="font-size:11px;line-height:1.9">
-        <div><span style="color:#1fba85">✓</span> 3W return ≥ 20%</div>
-        <div><span style="color:#1fba85">✓</span> Momentum accelerating (1W &gt; 3W trend)</div>
-        <div><span style="color:#1fba85">✓</span> Volume above average</div>
-        <div><span style="color:#1fba85">✓</span> Not within 5% of 52W high</div>
-        <div><span style="color:#1fba85">✓</span> Dollar volume &gt; $100M/day</div>
-        <div><span style="color:#1fba85">✓</span> Max $500 deployed per play</div>
-        <div><span style="color:#1fba85">✓</span> Max 2 open at any time</div>
-      </div>
-    </div>
-
-    <!-- Part A2: load this week's opportunity scan -->
-    <div style="margin-bottom:.85rem">
-      <div class="ctitle" style="margin-bottom:.4rem;font-size:12px">This week's scan</div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:.5rem">
-        <label style="display:inline-block;cursor:pointer;font-size:11px;padding:4px 10px;border:.5px solid rgba(255,255,255,0.12);border-radius:6px;background:#1a1a1a;color:#e8e6e0">
-          Choose file <input type="file" id="opp-scan-file-input" accept=".csv" style="display:none" onchange="loadOppScanCSV(this)">
-        </label>
-        <span id="opp-scan-file-label" style="font-size:11px;opacity:.6">No file loaded — run python3 stock_model/main.py --opportunities then load opportunities_YYYY-MM-DD.csv</span>
-      </div>
-      <div id="opp-scan-output"></div>
-    </div>
-
-    <!-- Part B: open plays -->
+    <div id="opp-overdue-banner"></div>
     <div class="ctitle" style="margin-bottom:.5rem">Open plays</div>
     <div id="opp-open-list" style="margin-bottom:.85rem"><div style="font-size:13px;opacity:.5">No open plays</div></div>
 
-    <!-- Part C: log new play -->
-    <button id="opp-log-toggle-btn" onclick="oppToggleLogForm()" style="min-width:80px;padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;min-height:44px">＋ Log new play</button>
-    <div id="opp-log-form" style="display:none;margin-top:.75rem;padding-top:.75rem;border-top:.5px solid rgba(255,255,255,0.08)">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-        <div><label style="font-size:11px;display:block;margin-bottom:4px">Ticker</label><input id="opp-in-ticker" placeholder="AAPL" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;text-transform:uppercase;box-sizing:border-box"></div>
-        <div><label style="font-size:11px;display:block;margin-bottom:4px">Entry Date</label><input id="opp-in-date" type="date" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
-        <div><label style="font-size:11px;display:block;margin-bottom:4px">Entry Price</label><input id="opp-in-price" type="number" step="0.01" placeholder="0.00" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
-        <div><label style="font-size:11px;display:block;margin-bottom:4px">Amount Deployed $</label><input id="opp-in-deployed" type="number" max="500" placeholder="500" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
-      </div>
-      <div style="margin-top:10px">
-        <label style="font-size:11px;display:block;margin-bottom:4px">Notes</label>
-        <textarea id="opp-in-notes" rows="2" placeholder="Why are you taking this? What signal did you see?" style="width:100%;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;resize:vertical;box-sizing:border-box"></textarea>
-      </div>
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <button onclick="oppAddPlay()" style="min-width:80px;padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;min-height:44px">Save play</button>
-        <span id="opp-add-err" style="font-size:12px"></span>
-      </div>
-    </div>
-
-    <!-- Part E: closed plays history -->
+    <!-- Log-new-play form + scan loader live on the Execute tab now —
+         this card is the daily "what's open + how much longer" glance. -->
     <details style="margin-top:1rem">
       <summary style="font-size:12px;cursor:pointer;opacity:.7">Past plays ▾</summary>
       <div id="opp-closed-list" style="margin-top:.6rem"></div>
@@ -727,58 +628,162 @@ canvas{width:100%!important}
   </div>
 </div>
 
+</div><!-- /main-dashboard -->
+
+<!-- ════════════════════════════════════════════════════
+     EXECUTE TAB
+     Monday-morning + Friday workflow: loaders, slate,
+     opportunities, manual trade logger, candidate pool.
+     ════════════════════════════════════════════════════ -->
+<div id="main-execute" style="display:none">
+
 <!-- ══════════════════════════════════════
-     7 — CANDIDATE POOL BACKFILL (very bottom)
+     1 — MONDAY SLATE LOADER
+     ══════════════════════════════════════ -->
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;opacity:.5">Monday slate</div>
+<div class="card" id="slate-loader-card">
+  <div class="card-hdr">
+    <div>
+      <div class="ctitle" style="margin-bottom:2px">This week's model candidates</div>
+      <div style="font-size:11px" id="slate-file-label">No file loaded — run <code style="font-size:11px">python src/main.py</code> then load the CSV</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <span id="slate-regime-tag" style="display:none;font-size:11px;padding:2px 9px;border-radius:8px;font-weight:500"></span>
+      <button id="slate-archive-btn" onclick="archiveCurrentSlate()" style="display:none;font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Save this week's candidates and start fresh for next week">📁 Archive week</button>
+      <button onclick="nextWeek()" style="font-size:11px;padding:4px 10px;cursor:pointer;border-radius:8px;border:.5px solid" title="Advance to next week and reset the live view">Advance week →</button>
+      <label style="cursor:pointer">
+        <input type="file" id="slate-file-input" accept=".csv" style="display:none" onchange="loadSlateCSV(this)">
+        <span class="rbtn" style="display:inline-block">📂 Load Monday slate</span>
+      </label>
+    </div>
+  </div>
+  <div id="slate-model-output"></div>
+
+  <!-- HISTORY: inline, hidden until archive has entries -->
+  <div id="slate-history-section" style="display:none;margin-top:1rem;padding-top:.75rem;border-top:.5px solid">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+      <span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;opacity:.5">Past weeks</span>
+      <select id="slate-history-select" onchange="renderSlateHistory(this.value)"
+        style="font-size:12px;padding:4px 8px;border-radius:8px;border:.5px solid;cursor:pointer">
+        <option value="">— view a past week —</option>
+      </select>
+    </div>
+    <div id="slate-history-output"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     2 — OPPORTUNITIES LOADER (Bucket 2)
+     Scan loader + criteria + log-new-play form.
+     Open-plays list itself lives on Dashboard.
+     ══════════════════════════════════════ -->
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Opportunities</div>
+<div class="card">
+  <div class="ctitle">🎯 Opportunistic plays — scan &amp; log</div>
+
+  <!-- criteria reminder -->
+  <div style="border-radius:8px;padding:.7rem .9rem;margin-bottom:.85rem;background:rgba(31,186,133,0.06);border:.5px solid rgba(31,186,133,0.15)">
+    <div style="font-size:11px;line-height:1.9">
+      <div><span style="color:#1fba85">✓</span> 3W return ≥ 20%</div>
+      <div><span style="color:#1fba85">✓</span> Momentum accelerating (1W &gt; 3W trend)</div>
+      <div><span style="color:#1fba85">✓</span> Volume above average</div>
+      <div><span style="color:#1fba85">✓</span> Not within 5% of 52W high</div>
+      <div><span style="color:#1fba85">✓</span> Dollar volume &gt; $100M/day</div>
+      <div><span style="color:#1fba85">✓</span> $300-500 deployed per play (fixed)</div>
+      <div><span style="color:#1fba85">✓</span> Maximum hold: 3 weeks — exit regardless of P&amp;L</div>
+      <div><span style="color:#1fba85">✓</span> Exit early if stop hits or thesis breaks</div>
+    </div>
+  </div>
+
+  <!-- load this week's opportunity scan -->
+  <div style="margin-bottom:.85rem">
+    <div class="ctitle" style="margin-bottom:.4rem;font-size:12px">This week's scan</div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:.5rem">
+      <label style="display:inline-block;cursor:pointer;font-size:11px;padding:4px 10px;border:.5px solid rgba(255,255,255,0.12);border-radius:6px;background:#1a1a1a;color:#e8e6e0">
+        Choose file <input type="file" id="opp-scan-file-input" accept=".csv" style="display:none" onchange="loadOppScanCSV(this)">
+      </label>
+      <span id="opp-scan-file-label" style="font-size:11px;opacity:.6">No file loaded — run python3 stock_model/main.py --opportunities then load opportunities_YYYY-MM-DD.csv</span>
+    </div>
+    <div id="opp-scan-output"></div>
+  </div>
+
+  <!-- log new play -->
+  <button id="opp-log-toggle-btn" onclick="oppToggleLogForm()" style="min-width:80px;padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;min-height:44px">＋ Log new play</button>
+  <div id="opp-log-form" style="display:none;margin-top:.75rem;padding-top:.75rem;border-top:.5px solid rgba(255,255,255,0.08)">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+      <div><label style="font-size:11px;display:block;margin-bottom:4px">Ticker</label><input id="opp-in-ticker" placeholder="AAPL" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;text-transform:uppercase;box-sizing:border-box"></div>
+      <div><label style="font-size:11px;display:block;margin-bottom:4px">Entry Date</label><input id="opp-in-date" type="date" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
+      <div><label style="font-size:11px;display:block;margin-bottom:4px">Entry Price</label><input id="opp-in-price" type="number" step="0.01" placeholder="0.00" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
+      <div><label style="font-size:11px;display:block;margin-bottom:4px">Amount Deployed $</label><input id="opp-in-deployed" type="number" max="500" placeholder="500" style="width:100%;min-height:44px;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;box-sizing:border-box"></div>
+    </div>
+    <div style="margin-top:10px">
+      <label style="font-size:11px;display:block;margin-bottom:4px">Notes</label>
+      <textarea id="opp-in-notes" rows="2" placeholder="Why are you taking this? What signal did you see?" style="width:100%;font-size:13px;padding:8px;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#222220;color:#e8e6e0;resize:vertical;box-sizing:border-box"></textarea>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <button onclick="oppAddPlay()" style="min-width:80px;padding:8px 16px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid rgba(255,255,255,0.12);background:#1a1a1a;color:#e8e6e0;min-height:44px">Save play</button>
+      <span id="opp-add-err" style="font-size:12px"></span>
+    </div>
+    <div id="opp-add-confirm"></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     3 — TRADE LOGGER
+     For trades not pre-filled from the slate.
+     ══════════════════════════════════════ -->
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Trade logger</div>
+<div class="card">
+  <div class="ctitle">Add trade manually</div>
+  <div class="entry-form">
+    <div><label>Ticker</label><input id="in-t" placeholder="AAPL" style="text-transform:uppercase"></div>
+    <div><label>Entry $</label><input id="in-e" type="number" placeholder="150.00" step="0.01"></div>
+    <div><label>Stop $</label><input id="in-s" type="number" placeholder="144.00" step="0.01"></div>
+    <div><label>Target $</label><input id="in-tg" type="number" placeholder="162.00" step="0.01"></div>
+    <div><label>Shares</label><input id="in-sh" type="number" placeholder="10"></div>
+  </div>
+  <div style="margin-top:8px;display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:end">
+    <div>
+      <label style="font-size:11px">Sector</label>
+      <select id="in-sec" style="font-size:13px;padding:6px 8px;border-radius:8px;border:.5px solid;width:100%">
+        <option>Technology</option><option>Healthcare</option><option>Financials</option>
+        <option>Consumer</option><option>Industrials</option><option>Energy</option>
+        <option>Materials</option><option>Utilities</option><option>Real Estate</option><option>Telecom</option><option>Other</option>
+      </select>
+    </div>
+    <button onclick="addTrade()" style="padding:6px 14px;font-size:13px;cursor:pointer;border-radius:8px;border:.5px solid;height:34px">+ add</button>
+  </div>
+  <div style="margin-top:6px"><span id="add-err" style="font-size:12px"></span></div>
+  <div style="font-size:11px;opacity:.5;margin-top:8px">Only needed for trades not pre-filled by → Trade on the slate above.</div>
+</div>
+
+<!-- ══════════════════════════════════════
+     4 — CANDIDATE POOL (collapsed by default)
+     ══════════════════════════════════════ -->
+
+<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Candidate pool</div>
+<div class="card" style="margin-bottom:1rem">
+  <details id="exec-pool-details">
+    <summary id="exec-pool-summary" style="font-size:12px;cursor:pointer;font-weight:500">Past candidates ▾</summary>
+    <div id="exec-pool-body" style="margin-top:.75rem;overflow-x:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px">
+        <thead><tr style="border-bottom:.5px solid rgba(255,255,255,0.08)" id="exec-pool-thead"></tr></thead>
+        <tbody id="exec-pool-tbody"></tbody>
+      </table>
+    </div>
+  </details>
+</div>
+
+<!-- ══════════════════════════════════════
+     5 — BACKFILL (very bottom)
      ══════════════════════════════════════ -->
 
 <div style="text-align:center;margin-bottom:1rem"><button id="backfill-pool-btn" onclick="backfillCandidatePool()" style="font-size:11px;opacity:.5;border:none;background:transparent;cursor:pointer;color:inherit">Backfill past weeks →</button></div>
 
-</div><!-- /main-stock -->
-
-<!-- ════════════════════════════════════════════════════
-     CANDIDATE POOL TAB
-     ════════════════════════════════════════════════════ -->
-<div id="tab-pool" style="display:none;padding-top:.5rem">
-
-  <!-- A: Disclaimer -->
-  <div id="pool-disclaimer" style="font-size:11px;margin-bottom:1rem"></div>
-
-  <!-- B: Summary metric cards -->
-  <div class="grid-4" style="margin-bottom:1rem">
-    <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
-      <div class="lbl">Total tracked</div>
-      <div class="val" id="pool-stat-total">—</div>
-    </div>
-    <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
-      <div class="lbl">Paper win rate</div>
-      <div class="val" id="pool-stat-winrate">—</div>
-    </div>
-    <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
-      <div class="lbl">Avg R (paper)</div>
-      <div class="val" id="pool-stat-avgr">—</div>
-    </div>
-    <div class="metric" style="background:var(--metric-bg,#222220);border:.5px solid var(--metric-border,rgba(255,255,255,.06));border-radius:8px">
-      <div class="lbl">Weeks tracked</div>
-      <div class="val" id="pool-stat-weeks">—</div>
-    </div>
-  </div>
-
-  <!-- C: Two-column analysis panels -->
-  <div class="grid-2" style="margin-bottom:1rem">
-    <div class="card">
-      <div class="ctitle">Score bucket win rate</div>
-      <div id="pool-buckets"></div>
-    </div>
-    <div class="card">
-      <div class="ctitle">Regime breakdown</div>
-      <div id="pool-regimes"></div>
-    </div>
-  </div>
-
-  <!-- D: Weekly candidate cards -->
-  <div id="pool-weeks-list"></div>
-
-</div><!-- /tab-pool -->
+</div><!-- /main-execute -->
 
 <!-- ════════════════════════════════════════════════════
      CRYPTO TAB
@@ -1087,9 +1092,17 @@ canvas{width:100%!important}
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Signal 2 — VOLUME_BREAK</span><span style="font-size:12px;text-align:right">Volume surge ≥ 5x normal + 3W ≥ 10% + dv &gt; $50M/day</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px;flex-shrink:0">Manual criteria</span><span style="font-size:12px;text-align:right">3W return ≥ 20%, accelerating, volume confirmed, not within 5% of 52W high, $ volume &gt; $100M/day</span></div>
   <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Size</span><span style="font-size:12px">$300–500 deployed fixed (not risk-based)</span></div>
-  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Max open</span><span style="font-size:12px">2 at any time</span></div>
-  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Exit</span><span style="font-size:12px">No mandatory Friday exit — hold until thesis breaks</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Max open</span><span style="font-size:12px">No hard cap — warns at 2-3 open, warns harder at 4+</span></div>
+  <div class="c-filter-row"><span style="opacity:.6;font-size:12px">Exit</span><span style="font-size:12px">3-week maximum hold — see Exit rules below</span></div>
   <div class="c-filter-row" style="border-bottom:none"><span style="opacity:.6;font-size:12px">P&amp;L</span><span style="font-size:12px">Separate P&amp;L — never mixed with V2 systematic results</span></div>
+
+  <div style="font-size:11px;line-height:1.7;margin-top:10px;padding-top:8px;border-top:.5px solid rgba(255,255,255,0.08)">
+    <div style="font-weight:500;opacity:.75;margin-bottom:4px">Exit rules</div>
+    <div>• Hard stop: price listed in scanner output</div>
+    <div>• Time stop: 3 weeks maximum — exit Monday of week 4 regardless of profit or loss</div>
+    <div>• Thesis break: exit early if the momentum that caused the signal clearly reverses</div>
+    <div>• Friday close script will warn you when positions are approaching their 3-week limit</div>
+  </div>
 </div>
 
 <div class="card">
@@ -1311,7 +1324,7 @@ let weekNum = 1;
 let regime  = 'BEAR_TREND';
 let lastPriceSuccess = 0;        // epoch ms of last successful price fetch
 const priceFailed = new Set();   // tickers whose last fetch returned null
-let intelOpen = true;
+let intelOpen = false;  // Change 6: Market intel collapsed by default on Dashboard
 let tradeAlerts = JSON.parse(localStorage.getItem('swingv3_alerts')||'{}');  // stays local
 let tradeAlertChanges = {};
 let currentPage = 0;
@@ -3298,7 +3311,7 @@ async function loadBackfillCSV(input){
       const confirmEl = document.getElementById('backfill-csv-confirm');
       if(confirmEl) confirmEl.textContent = added > 0 ? added+' candidates logged to pool' : 'Already present — no duplicates added';
       input.value = '';
-      if(_mainTab === 'pool') renderCandidatePool();
+      if(_mainTab === 'execute') renderCandidatePool();
       console.log('loadBackfillCSV: '+added+' candidates logged for week', slateWeek);
     }catch(e){ console.error('loadBackfillCSV error:',e); }
   };
@@ -3571,7 +3584,16 @@ function buildSlateTable(rows, showLogBtn, T){
       + '<td style="padding:8px 8px;text-align:right">' + sizingHtml + '</td>'
       + '<td style="padding:8px 8px;text-align:center">' + accelHtml + '</td>'
       + (showLogBtn
-          ? '<td style="padding:8px 8px"><button onclick="prefillTrade(\'' + ticker + '\',' + entry + ',' + stop + ',' + tgt + ',' + shares + ',\'' + sector + '\',\'' + company.replace(/'/g,"\\'") + '\')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">→ log</button></td>'
+          ? '<td style="padding:8px 8px" id="slate-action-cell-' + ticker + '">'
+            + '<div class="slate-action-full" style="display:flex;gap:4px">'
+              + '<button onclick="prefillTrade(\'' + ticker + '\',' + entry + ',' + stop + ',' + tgt + ',' + shares + ',\'' + sector + '\',\'' + company.replace(/'/g,"\\'") + '\')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">→ Trade</button>'
+              + '<button onclick="showSlateSkipMenu(\'' + ticker + '\')" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textMuted + '">→ Skip</button>'
+            + '</div>'
+            + '<div class="slate-action-abbrev" style="gap:4px">'
+              + '<button onclick="prefillTrade(\'' + ticker + '\',' + entry + ',' + stop + ',' + tgt + ',' + shares + ',\'' + sector + '\',\'' + company.replace(/'/g,"\\'") + '\')" title="Trade" style="font-size:12px;padding:3px 7px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.win + '">✓</button>'
+              + '<button onclick="showSlateSkipMenu(\'' + ticker + '\')" title="Skip" style="font-size:12px;padding:3px 7px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.loss + '">✗</button>'
+            + '</div>'
+            + '</td>'
           : '')
       + '</tr>'
       // Tap-to-expand detail row — holds the columns that never show inline
@@ -3591,6 +3613,7 @@ function buildSlateTable(rows, showLogBtn, T){
       + '<span>1W Ret: <b style="color:' + (ret1w>=0?T.win:T.loss) + '">' + (ret1w>=0?'+':'') + (ret1w*100).toFixed(1) + '%</b></span>'
       + '<span>RSI: <b style="color:' + T.textPrimary + '">' + rsi.toFixed(0) + '</b></span>'
       + (warningRaw ? '<span>⚠ <b style="color:#c8890a">' + escHtml(warningRaw) + '</b></span>' : '')
+      + (showLogBtn ? '<span class="slate-action-abbrev-legend">✓ = Trade  ·  ✗ = Skip</span>' : '')
       + '</div></td></tr>';
   });
 
@@ -3598,6 +3621,53 @@ function buildSlateTable(rows, showLogBtn, T){
   html += '<div style="font-size:11px;color:' + T.textMuted + ';margin-top:8px;font-style:italic">Total deployed: $' + totalCapital.toLocaleString() + (showLogBtn ? ' · Click → log to pre-fill the Add Trade form. Confirm your actual fill price before submitting.' : '') + '</div>';
   html += buildFilterDetailSection(rows, T);
   return html;
+}
+
+// ── Change 2/3: → Skip flow for the slate table ──
+const SLATE_SKIP_REASONS = ['Above max entry','Already have position','Personal choice','Other'];
+
+function showSlateSkipMenu(ticker){
+  const T = THEME;
+  const cell = document.getElementById('slate-action-cell-' + ticker);
+  if(!cell) return;
+  cell.innerHTML = '<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">'
+    + '<select id="slate-skip-reason-' + ticker + '" style="font-size:11px;padding:3px 5px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.inputBg + ';color:' + T.textPrimary + '">'
+    + SLATE_SKIP_REASONS.map(r => '<option value="' + escHtml(r) + '">' + escHtml(r) + '</option>').join('')
+    + '</select>'
+    + '<button onclick="confirmSlateSkip(\'' + ticker + '\')" title="Confirm skip" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textPrimary + '">✓</button>'
+    + '<button onclick="renderSlate()" title="Cancel" style="font-size:10px;padding:3px 8px;cursor:pointer;border-radius:6px;border:.5px solid;background:' + T.btnBg + ';border-color:' + T.btnBorder + ';color:' + T.textMuted + '">✕</button>'
+    + '</div>';
+}
+
+// Mirrors addTrade()'s existing "silently mark taken:true in candidatePool"
+// block — same week+ticker match pattern, opposite outcome (taken:false +
+// skip_reason instead of taken:true). The candidatePool entry already
+// exists from loadSlateCSV()'s auto-log-on-load, so this updates it rather
+// than inserting a new one.
+async function skipCandidateInPool(ticker, reason){
+  if(!userRef) return;
+  try{
+    const cpSnap = await userRef.collection('data').doc('candidatePool').get();
+    const items = cpSnap.exists ? (cpSnap.data().items||[]) : [...candidatePool];
+    let changed = false;
+    items.forEach(x => { if(x.week===weekNum && x.ticker===ticker){ x.taken=false; x.skip_reason=reason; changed=true; } });
+    if(changed){
+      await userRef.collection('data').doc('candidatePool').set({items});
+      candidatePool = items;
+    }
+  }catch(e){ console.error('candidatePool skip update error:', e); }
+}
+
+async function confirmSlateSkip(ticker){
+  const sel = document.getElementById('slate-skip-reason-' + ticker);
+  const reason = sel ? sel.value : 'Other';
+  await skipCandidateInPool(ticker, reason);
+  const cell = document.getElementById('slate-action-cell-' + ticker);
+  if(cell){
+    const T = THEME;
+    cell.innerHTML = '<span style="font-size:11px;color:' + T.textMuted + '">Skipped — will track outcome</span>';
+  }
+  if(_mainTab === 'execute') renderCandidatePool();
 }
 
 function renderSlateHistoryDropdown(){
@@ -3953,6 +4023,8 @@ function oppToggleLogForm(){
   if(willShow){
     const dEl = document.getElementById('opp-in-date');
     if(dEl && !dEl.value) dEl.value = new Date().toISOString().slice(0,10);
+    const confirmEl = document.getElementById('opp-add-confirm');
+    if(confirmEl) confirmEl.innerHTML = '';
   }
 }
 
@@ -3985,6 +4057,16 @@ async function oppAddPlay(){
   if(formEl) formEl.style.display = 'none';
   renderOpportunisticPlays();
   refreshOppPrices();
+
+  // Change 3: success confirmation with the exit-reminder download
+  const confirmEl = document.getElementById('opp-add-confirm');
+  if(confirmEl){
+    const stopGuess = oppLookupStopPrice(play.ticker);
+    confirmEl.innerHTML = '<div style="margin-top:10px;padding:8px 10px;border-radius:8px;background:rgba(31,186,133,0.08);border:.5px solid rgba(31,186,133,0.2);font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'
+      + '<span style="color:' + T.win + '">✓ ' + escHtml(play.ticker) + ' logged</span>'
+      + reminderButtonHtml(T, play.ticker, play.entryDate, play.entryPrice, stopGuess)
+      + '</div>';
+  }
 }
 
 function oppShowCloseForm(id){
@@ -4020,6 +4102,94 @@ function oppClosePlay(id){
   renderOpportunisticPlays();
 }
 
+// ── Bucket 2 hold-time tracking (3-week max hold) ──
+const BUCKET2_MAX_HOLD_DAYS = 21;
+
+function bucket2HoldInfo(entryDateStr){
+  const entry = new Date(entryDateStr + 'T00:00:00');
+  const now = new Date();
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysHeld = Math.floor((todayMidnight - entry) / 86400000);
+  const exitBy = new Date(entry);
+  exitBy.setDate(exitBy.getDate() + BUCKET2_MAX_HOLD_DAYS);
+  const daysRemaining = BUCKET2_MAX_HOLD_DAYS - daysHeld;
+  return { daysHeld, exitBy, daysRemaining };
+}
+
+function bucket2RemainingLabel(daysRemaining){
+  if(daysRemaining <= 0) return { color:'#A32D2D', bold:true, text:'EXIT TODAY' };
+  if(daysRemaining <= 3)  return { color:'#A32D2D', bold:false, text: daysRemaining + ' days' };
+  if(daysRemaining <= 6)  return { color:'#d4a017', bold:false, text: daysRemaining + ' days' };
+  return { color:'#1D9E75', bold:false, text: daysRemaining + ' days' };
+}
+
+// Best-effort stop-price lookup from the loaded opportunity scan CSV — the
+// opportunisticPlays Firestore schema itself has no stop field (untouched,
+// per spec), so this is optional context for the .ics reminder only.
+function oppLookupStopPrice(ticker){
+  if(!oppScanStore || !oppScanStore.rows) return null;
+  const row = oppScanStore.rows.find(r => (r['Ticker']||'').toUpperCase() === String(ticker).toUpperCase());
+  if(!row) return null;
+  const stop = parseFloat(row['Stop Price']);
+  return isNaN(stop) ? null : stop;
+}
+
+// Downloads a .ics calendar event for the 3-week exit date. Uses a Blob +
+// object URL (not a raw `data:` URI) since the literal data: template with
+// unencoded colons/newlines is unreliable across browsers — this is the
+// standard, robust way to trigger a same-page file download.
+function oppDownloadIcsReminder(ticker, entryDate, entryPrice, stopPrice){
+  const entry = new Date(entryDate + 'T00:00:00');
+  const exitDate = new Date(entry);
+  exitDate.setDate(exitDate.getDate() + BUCKET2_MAX_HOLD_DAYS);
+  const nextDay = new Date(exitDate);
+  nextDay.setDate(nextDay.getDate() + 1);
+  const fmt = d => d.toISOString().slice(0,10).replace(/-/g,'');
+  const stopLine = (stopPrice != null && !isNaN(stopPrice)) ? (' Stop: $' + Number(stopPrice).toFixed(2) + '.') : '';
+  const uid = 'bucket2-' + ticker + '-' + entryDate + '@trading-dashboard';
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Trading Dashboard//Bucket 2//EN',
+    'BEGIN:VEVENT',
+    'UID:' + uid,
+    'DTSTART;VALUE=DATE:' + fmt(exitDate),
+    'DTEND;VALUE=DATE:' + fmt(nextDay),
+    'SUMMARY:EXIT ' + ticker + ' — Bucket 2 3-week hold complete',
+    'DESCRIPTION:Close ' + ticker + ' position. Entered ' + entryDate + ' at $' + Number(entryPrice).toFixed(2) + '.' + stopLine + ' 3-week maximum hold reached.',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+  const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'exit_' + ticker + '_reminder.ics';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function reminderButtonHtml(T, ticker, entryDate, entryPrice, stopPrice){
+  const stopArg = (stopPrice != null && !isNaN(stopPrice)) ? stopPrice : 'null';
+  return '<button onclick="oppDownloadIcsReminder(\'' + ticker + '\',\'' + entryDate + '\',' + entryPrice + ',' + stopArg + ')" '
+    + 'style="font-size:11px;padding:6px 10px;border-radius:6px;border:.5px solid ' + T.btnBorder + ';background:' + T.btnBg + ';color:' + T.textPrimary + ';cursor:pointer;min-height:36px;white-space:nowrap">📅 Add exit reminder</button>';
+}
+
+function renderOppOverdueBanner(){
+  const el = document.getElementById('opp-overdue-banner');
+  if(!el) return;
+  const open = opportunisticPlays.filter(p => p.status === 'open' && p.entryDate);
+  const overdue = open.filter(p => bucket2HoldInfo(p.entryDate).daysHeld >= BUCKET2_MAX_HOLD_DAYS);
+  if(!overdue.length){ el.innerHTML = ''; return; }
+  el.innerHTML = overdue.map(p =>
+    '<div style="border-radius:8px;padding:.6rem .8rem;margin-bottom:.5rem;background:rgba(163,45,45,0.12);border:.5px solid rgba(163,45,45,0.35);font-size:12px;color:#A32D2D;font-weight:500">'
+    + '🚨 EXIT REQUIRED: ' + escHtml(p.ticker) + ' has been held 21+ days — 3 week maximum hold reached'
+    + '</div>'
+  ).join('');
+}
+
 function renderOppOpenList(){
   const T = THEME;
   const el = document.getElementById('opp-open-list');
@@ -4034,6 +4204,10 @@ function renderOppOpenList(){
     const pnlColor = pnl >= 0 ? T.win : T.loss;
     const notes = (p.notes || '').trim();
     const notesShort = notes.length > 70 ? notes.slice(0,70) + '…' : notes;
+    const hold = bucket2HoldInfo(p.entryDate);
+    const remLabel = bucket2RemainingLabel(hold.daysRemaining);
+    const exitByStr = hold.exitBy.toISOString().slice(0,10);
+    const stopGuess = oppLookupStopPrice(p.ticker);
     return '<div class="slate-card" style="margin-bottom:.5rem">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px">'
       + '<span class="tkr">' + escHtml(p.ticker) + '</span>'
@@ -4047,7 +4221,12 @@ function renderOppOpenList(){
       + '<span style="color:' + T.textMuted + '">$' + p.deployed.toFixed(0) + ' deployed</span>'
       + '<span style="color:' + pnlColor + ';font-weight:500">' + fmtP(pnl) + ' (' + (pct*100>=0?'+':'') + (pct*100).toFixed(1) + '%)</span>'
       + '</div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:' + T.textMuted + ';margin-bottom:3px;flex-wrap:wrap;gap:4px;padding-top:3px;border-top:.5px solid ' + T.cardBorder + '">'
+      + '<span>Days held: <b style="color:' + T.textPrimary + '">' + hold.daysHeld + '</b> · Exit by: <b style="color:' + T.textPrimary + '">' + exitByStr + '</b></span>'
+      + '<span>Days remaining: <b style="color:' + remLabel.color + (remLabel.bold?';font-weight:700':'') + '">' + remLabel.text + '</b></span>'
+      + '</div>'
       + (notesShort ? '<div style="font-size:11px;color:' + T.textMuted + ';font-style:italic;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + escHtml(notesShort) + '</div>' : '')
+      + '<div style="margin-top:6px">' + reminderButtonHtml(T, p.ticker, p.entryDate, p.entryPrice, stopGuess) + '</div>'
       + '<div id="opp-close-form-' + p.id + '"></div>'
       + '</div>';
   }).join('');
@@ -4073,6 +4252,7 @@ function renderOppClosedList(){
 }
 
 function renderOpportunisticPlays(){
+  renderOppOverdueBanner();
   renderOppOpenList();
   renderOppClosedList();
 }
@@ -4133,150 +4313,53 @@ function copyCmd(id, btn) {
 function renderCandidatePool() {
   const T = THEME;
 
-  // Completed = entries where the paper outcome is known
-  const completed = candidatePool.filter(x => x.exitR !== null);
-  const totalTracked = candidatePool.length;
-  const wins = completed.filter(x => x.exitR > 0);
-  const paperWinRate = completed.length > 0 ? Math.round(wins.length / completed.length * 100) : null;
-  const avgR = completed.length > 0 ? completed.reduce((s, x) => s + x.exitR, 0) / completed.length : null;
-  const weeksTracked = new Set(candidatePool.map(x => x.week)).size;
-
-  // ── Disclaimer ──
-  const disc = document.getElementById('pool-disclaimer');
-  if (disc) { disc.textContent = 'Paper outcomes only — not included in live P&L or performance metrics'; disc.style.color = T.textMuted; }
-
-  // ── Metric cards ──
-  const elTotal = document.getElementById('pool-stat-total');
-  const elWR    = document.getElementById('pool-stat-winrate');
-  const elAvgR  = document.getElementById('pool-stat-avgr');
-  const elWeeks = document.getElementById('pool-stat-weeks');
-
-  if (elTotal) { elTotal.textContent = totalTracked || '—'; elTotal.style.color = T.textPrimary; }
-  if (elWR) {
-    if (paperWinRate === null) { elWR.textContent = '—'; elWR.style.color = T.textMuted; }
-    else { elWR.textContent = paperWinRate + '%'; elWR.style.color = paperWinRate > 50 ? T.win : T.loss; }
-  }
-  if (elAvgR) {
-    if (avgR === null) { elAvgR.textContent = '—'; elAvgR.style.color = T.textMuted; }
-    else { elAvgR.textContent = (avgR >= 0 ? '+' : '') + avgR.toFixed(2) + 'R'; elAvgR.style.color = avgR >= 0 ? T.win : T.loss; }
-  }
-  if (elWeeks) { elWeeks.textContent = weeksTracked || '—'; elWeeks.style.color = T.textPrimary; }
-
-  // ── Score bucket win rate ──
-  const bucketsEl = document.getElementById('pool-buckets');
-  if (bucketsEl) {
-    const buckets = [
-      {label:'0.90+',     min:0.90, max:1.01},
-      {label:'0.80–0.89', min:0.80, max:0.90},
-      {label:'0.70–0.79', min:0.70, max:0.80},
-      {label:'0.60–0.69', min:0.60, max:0.70},
-      {label:'< 0.60',    min:0,    max:0.60},
-    ];
-    bucketsEl.innerHTML = buckets.map(b => {
-      const grp  = completed.filter(x => x.score >= b.min && x.score < b.max);
-      const tot  = grp.length;
-      const wr   = tot > 0 ? grp.filter(x => x.exitR > 0).length / tot : null;
-      const barW = wr !== null ? Math.round(wr * 100) : 0;
-      const barC = wr !== null ? (wr >= 0.5 ? T.win : T.loss) : T.progressTrack;
-      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12px">
-        <span style="width:70px;color:${T.textMuted};flex-shrink:0">${b.label}</span>
-        <div style="flex:1;height:6px;background:${T.progressTrack};border-radius:3px;overflow:hidden">${tot ? `<div style="width:${barW}%;height:100%;background:${barC};border-radius:3px"></div>` : ''}</div>
-        <span style="width:90px;text-align:right;font-size:11px;color:${tot ? T.textPrimary : T.textMuted}">${tot ? `${tot} · ${Math.round(wr*100)}% win` : '—'}</span>
-      </div>`;
-    }).join('');
+  // ── Collapsible header with pending-count badge ──
+  const pending = candidatePool.filter(x => x.exitR === null).length;
+  const summaryEl = document.getElementById('exec-pool-summary');
+  if (summaryEl) {
+    summaryEl.textContent = pending > 0
+      ? `Past candidates (${pending} pending) ▾`
+      : `Past candidates (${candidatePool.length}) ▾`;
   }
 
-  // ── Regime breakdown ──
-  const regimesEl = document.getElementById('pool-regimes');
-  if (regimesEl) {
-    const regimes = ['BULL_VOLATILE','BULL_TREND','BEAR_VOLATILE','BEAR_TREND'];
-    regimesEl.innerHTML = regimes.map(reg => {
-      const grp  = completed.filter(x => x.regime === reg);
-      const tot  = grp.length;
-      const wr   = tot > 0 ? Math.round(grp.filter(x => x.exitR > 0).length / tot * 100) : null;
-      const rAvg = tot > 0 ? grp.reduce((s, x) => s + x.exitR, 0) / tot : null;
-      const isBull = reg.startsWith('BULL');
-      const bg    = isBull ? '#fff4d6' : '#fcebeb';
-      const fc    = isBull ? '#a07010' : '#a32d2d';
-      const label = reg.replace('_', ' ');
-      const avgC  = rAvg === null ? T.textMuted : (rAvg >= 0 ? T.win : T.loss);
-      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:12px;flex-wrap:wrap">
-        <span style="background:${bg};color:${fc};padding:2px 7px;border-radius:8px;font-size:11px;font-weight:500;min-width:108px;text-align:center;flex-shrink:0">${label}</span>
-        <span style="color:${T.textMuted}">${tot ? `${tot} trade${tot!==1?'s':''}` : '—'}</span>
-        <span style="margin-left:auto;color:${avgC};font-weight:500">${rAvg!==null ? (rAvg>=0?'+':'')+rAvg.toFixed(2)+'R' : '—'}</span>
-        ${wr!==null ? `<span style="color:${T.textMuted};font-size:11px">${wr}%</span>` : ''}
-      </div>`;
-    }).join('');
+  // ── Column headers ──
+  const theadEl = document.getElementById('exec-pool-thead');
+  if (theadEl) {
+    theadEl.innerHTML = ['Week','Ticker','Taken','Skip Reason','Entry','Exit R','Outcome']
+      .map(h => `<th style="text-align:left;padding:5px 6px;font-size:10px;font-weight:500;color:${T.textMuted};text-transform:uppercase;letter-spacing:.04em">${h}</th>`)
+      .join('');
   }
 
-  // ── Weekly candidate cards ──
-  const weeksList = document.getElementById('pool-weeks-list');
-  if (!weeksList) return;
+  // ── Flat table, most recent week first ──
+  const tbodyEl = document.getElementById('exec-pool-tbody');
+  if (!tbodyEl) return;
 
   if (!candidatePool.length) {
-    weeksList.innerHTML = `<div style="color:${T.textMuted};font-size:13px;text-align:center;padding:2rem 0">No candidate data yet — load a Monday slate to begin tracking.</div>`;
+    tbodyEl.innerHTML = `<tr><td colspan="7" style="padding:1rem 6px;color:${T.textMuted};font-size:13px;text-align:center">No candidate data yet — load a Monday slate to begin tracking.</td></tr>`;
     return;
   }
 
-  // Group by week, sort descending
-  const byWeek = {};
-  candidatePool.forEach(c => { if (!byWeek[c.week]) byWeek[c.week] = []; byWeek[c.week].push(c); });
-  const sortedWeeks = Object.keys(byWeek).map(Number).sort((a, b) => b - a);
+  const sorted = candidatePool.slice().sort((a, b) => (b.week||0) - (a.week||0) || (b.score||0) - (a.score||0));
 
-  weeksList.innerHTML = sortedWeeks.map(wk => {
-    const items = byWeek[wk].slice().sort((a, b) => (b.score||0) - (a.score||0));
-    const reg   = items[0]?.regime || 'UNKNOWN';
-    const dateStr = items[0]?.date || '';
-    const takenCt = items.filter(x => x.taken).length;
-    const isBull = reg.startsWith('BULL');
-    const bg    = isBull ? '#fff4d6' : (reg.startsWith('BEAR') ? '#fcebeb' : '#f1efe8');
-    const fc    = isBull ? '#a07010' : (reg.startsWith('BEAR') ? '#a32d2d' : '#888780');
-    const regLabel = reg.replace('_', ' ');
-    let displayDate = dateStr;
-    if (dateStr) {
-      try { displayDate = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); } catch(e) {}
-    }
-    const allPending = items.every(x => x.exitR === null);
-
-    const tRows = items.map(c => {
-      const exitKnown = c.exitR !== null;
-      const rColor = exitKnown ? (c.exitR > 0 ? T.win : T.loss) : T.textMuted;
-      const exitText = exitKnown ? (c.exitR > 0 ? 'W' : 'L') : 'pending';
-      const rText  = exitKnown ? (c.exitR >= 0 ? '+' : '') + c.exitR.toFixed(2) + 'R' : '—';
-      const rCell  = exitKnown
-        ? `<td style="padding:5px 6px;font-size:12px;color:${rColor};font-weight:500">${rText}</td>`
-        : `<td style="padding:5px 6px"><button onclick="poolEditRow(${wk},'${c.ticker}')" style="font-size:11px;background:transparent;border:none;color:${T.textMuted};cursor:pointer;padding:0" title="Enter outcome">✎</button></td>`;
-      const sBg    = c.taken ? 'rgba(31,186,133,0.12)' : T.progressTrack;
-      const sColor = c.taken ? T.win : T.textMuted;
-      const barW   = Math.round((c.score||0) * 80);
-      return `<tr id="pool-row-${wk}-${c.ticker}">
-        <td style="padding:5px 6px;font-size:12px;font-weight:500;color:${T.textPrimary}">${c.ticker}</td>
-        <td style="padding:5px 6px"><div style="display:flex;align-items:center;gap:5px"><div style="width:${barW}px;height:4px;background:${T.win};border-radius:2px;opacity:.7;flex-shrink:0"></div><span style="font-size:11px;color:${T.textMuted}">${(c.score||0).toFixed(2)}</span></div></td>
-        <td style="padding:5px 6px;font-size:12px;color:${T.textPrimary}">${(c.entry||0).toFixed(2)}</td>
-        <td style="padding:5px 6px;font-size:12px;color:${T.textMuted}">${(c.stop||0).toFixed(2)}</td>
-        <td style="padding:5px 6px;font-size:12px;color:${T.textMuted}">${(c.target||0).toFixed(2)}</td>
-        <td style="padding:5px 6px;font-size:12px;color:${rColor};font-weight:500">${exitText}</td>
-        ${rCell}
-        <td style="padding:5px 6px"><span style="background:${sBg};color:${sColor};font-size:11px;padding:2px 7px;border-radius:8px;font-weight:500">${c.taken ? 'traded' : 'sit-out'}</span></td>
-      </tr>`;
-    }).join('');
-
-    return `<div class="card" style="margin-bottom:.75rem">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:.75rem;flex-wrap:wrap">
-        <span style="font-size:13px;font-weight:500;color:${T.textPrimary}">Week ${wk}${displayDate ? ' — ' + displayDate : ''}</span>
-        <span style="background:${bg};color:${fc};padding:2px 7px;border-radius:8px;font-size:11px;font-weight:500">${regLabel}</span>
-        <span style="font-size:11px;color:${T.textMuted};margin-left:4px">${takenCt===0 ? '0 / '+items.length+' sit-out' : takenCt+' / '+items.length+' traded'}</span>
-      </div>
-      <div style="overflow-x:auto">
-        <table style="width:100%;border-collapse:collapse;min-width:480px">
-          <thead><tr style="border-bottom:.5px solid ${T.cardBorder}">
-            ${['Ticker','Score','Entry','Stop','Target','Exit','R','Status'].map(h=>`<th style="text-align:left;padding:4px 6px;font-size:10px;font-weight:500;color:${T.textMuted};text-transform:uppercase;letter-spacing:.04em">${h}</th>`).join('')}
-          </tr></thead>
-          <tbody>${tRows}</tbody>
-        </table>
-      </div>
-      ${allPending ? `<div style="font-size:11px;color:${T.textMuted};margin-top:.6rem;text-align:center">Outcomes pending — check back Friday</div>` : ''}
-    </div>`;
+  tbodyEl.innerHTML = sorted.map(c => {
+    const exitKnown = c.exitR !== null;
+    const rColor = exitKnown ? (c.exitR > 0 ? T.win : T.loss) : T.textMuted;
+    const rText  = exitKnown ? (c.exitR >= 0 ? '+' : '') + c.exitR.toFixed(2) + 'R' : '—';
+    const rCell  = exitKnown
+      ? `<td style="padding:5px 6px;font-size:12px;color:${rColor};font-weight:500">${rText}</td>`
+      : `<td style="padding:5px 6px"><button onclick="poolEditRow(${c.week},'${c.ticker}')" style="font-size:11px;background:transparent;border:none;color:${T.textMuted};cursor:pointer;padding:0" title="Enter outcome">✎ ${rText}</button></td>`;
+    const sBg    = c.taken ? 'rgba(31,186,133,0.12)' : T.progressTrack;
+    const sColor = c.taken ? T.win : T.textMuted;
+    const outcomeText = exitKnown ? (c.exitR > 0 ? 'Win' : 'Loss') : 'pending';
+    return `<tr id="pool-row-${c.week}-${c.ticker}" style="border-bottom:.5px solid ${T.cardBorder}">
+      <td style="padding:5px 6px;font-size:12px;color:${T.textMuted}">${c.week}</td>
+      <td style="padding:5px 6px;font-size:12px;font-weight:500;color:${T.textPrimary}">${escHtml(c.ticker)}</td>
+      <td style="padding:5px 6px"><span style="background:${sBg};color:${sColor};font-size:11px;padding:2px 7px;border-radius:8px;font-weight:500">${c.taken ? 'traded' : 'sit-out'}</span></td>
+      <td style="padding:5px 6px;font-size:11px;color:${T.textMuted}">${c.skip_reason ? escHtml(c.skip_reason) : '—'}</td>
+      <td style="padding:5px 6px;font-size:12px;color:${T.textPrimary}">${(c.entry||0).toFixed(2)}</td>
+      ${rCell}
+      <td style="padding:5px 6px;font-size:12px;color:${rColor}">${outcomeText}</td>
+    </tr>`;
   }).join('');
 }
 
@@ -4286,7 +4369,7 @@ function poolEditRow(wk, ticker) {
   const rowEl = document.getElementById('pool-row-' + wk + '-' + ticker);
   if (!rowEl) return;
   rowEl.innerHTML =
-    `<td colspan="8" style="padding:6px 6px">
+    `<td colspan="7" style="padding:6px 6px">
       <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
         <span style="font-size:12px;font-weight:500;color:${T.textPrimary}">${ticker}</span>
         <input id="pool-edit-r-${wk}-${ticker}" type="number" step="0.01"
@@ -4418,19 +4501,19 @@ document.addEventListener('click', function(e) {
 });
 
 /* ── main tab switching ── */
-let _mainTab = 'stock';
+let _mainTab = 'dashboard';
 function showMainTab(tab) {
   _mainTab = tab;
-  document.getElementById('main-stock').style.display  = tab === 'stock'  ? '' : 'none';
-  document.getElementById('tab-pool').style.display    = tab === 'pool'   ? '' : 'none';
-  document.getElementById('main-crypto').style.display = tab === 'crypto' ? '' : 'none';
-  document.getElementById('main-howto').style.display  = tab === 'howto'  ? '' : 'none';
-  document.getElementById('tab-btn-stock').classList.toggle('active',  tab === 'stock');
-  document.getElementById('tab-btn-pool').classList.toggle('active',   tab === 'pool');
-  document.getElementById('tab-btn-crypto').classList.toggle('active', tab === 'crypto');
-  document.getElementById('tab-btn-howto').classList.toggle('active',  tab === 'howto');
-  if (tab === 'crypto') { applyThemeCrypto(); buildCryptoEquityChart(); }
-  if (tab === 'pool')   { renderCandidatePool(); }
+  document.getElementById('main-dashboard').style.display = tab === 'dashboard' ? '' : 'none';
+  document.getElementById('main-execute').style.display   = tab === 'execute'   ? '' : 'none';
+  document.getElementById('main-crypto').style.display    = tab === 'crypto'    ? '' : 'none';
+  document.getElementById('main-howto').style.display     = tab === 'howto'     ? '' : 'none';
+  document.getElementById('tab-btn-dashboard').classList.toggle('active', tab === 'dashboard');
+  document.getElementById('tab-btn-execute').classList.toggle('active',  tab === 'execute');
+  document.getElementById('tab-btn-crypto').classList.toggle('active',   tab === 'crypto');
+  document.getElementById('tab-btn-howto').classList.toggle('active',    tab === 'howto');
+  if (tab === 'crypto')  { applyThemeCrypto(); buildCryptoEquityChart(); }
+  if (tab === 'execute') { renderCandidatePool(); }
 }
 
 function applyThemeCrypto() {
