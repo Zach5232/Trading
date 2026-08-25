@@ -437,7 +437,14 @@ canvas{width:100%!important}
      3 — PERFORMANCE METRICS (slim)
      ══════════════════════════════════════ -->
 
-<div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;margin-top:.25rem;opacity:.5">Performance metrics</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;margin-top:.25rem">
+  <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;opacity:.5">Performance metrics</div>
+  <div style="display:flex;gap:4px">
+    <button class="tab-btn active" id="m-filter-all" onclick="setMetricsFilter('all')" style="font-size:10px;padding:3px 9px">All-time</button>
+    <button class="tab-btn" id="m-filter-v2" onclick="setMetricsFilter('v2')" style="font-size:10px;padding:3px 9px">V2 only</button>
+  </div>
+</div>
+<div style="font-size:10px;opacity:.4;margin-bottom:6px" id="m-filter-note">Showing all-time (V1 legacy + V2 combined) — switch to V2 only to see just the current model's real results</div>
 <div class="grid-6" style="margin-bottom:.75rem">
   <div class="metric metric-slim"><div class="lbl">Total P&amp;L</div><div class="val" id="m-pnl">$0.00</div><div class="sub" id="m-r">0.00R all time</div></div>
   <div class="metric metric-slim"><div class="lbl">Win rate</div><div class="val" id="m-wr">—</div><div class="sub" id="m-wl">0W / 0L</div></div>
@@ -1415,6 +1422,28 @@ let weeks   = [];
 let candidatePool = [];
 let prices  = {};
 let spyHistory = JSON.parse(localStorage.getItem('swingv3_spy')||'[]');  // stays local
+
+// ── V1/V2 performance filter (Dashboard Performance Metrics + equity curve
+// only -- see the comment in render() for exactly what this does and
+// doesn't touch). Not persisted -- resets to 'all' on reload, since it's a
+// view preference, not data.
+let metricsFilter = 'all'; // 'all' | 'v2'
+function filteredTrades(){ return metricsFilter === 'v2' ? trades.filter(t => t.modelVersion === 'v2') : trades; }
+function filteredClosed(){ return metricsFilter === 'v2' ? closed.filter(t => t.modelVersion === 'v2') : closed; }
+function setMetricsFilter(f){
+  metricsFilter = f;
+  const allBtn = document.getElementById('m-filter-all');
+  const v2Btn  = document.getElementById('m-filter-v2');
+  if(allBtn) allBtn.classList.toggle('active', f === 'all');
+  if(v2Btn)  v2Btn.classList.toggle('active', f === 'v2');
+  const noteEl = document.getElementById('m-filter-note');
+  if(noteEl){
+    noteEl.textContent = f === 'v2'
+      ? 'Showing V2 only — V1 legacy trades excluded from these 6 cards and the equity curve below'
+      : 'Showing all-time (V1 legacy + V2 combined) — switch to V2 only to see just the current model’s real results';
+  }
+  render();
+}
 let weekNum = 1;
 let regime  = 'BEAR_TREND';
 let lastPriceSuccess = 0;        // epoch ms of last successful price fetch
@@ -2067,9 +2096,10 @@ function buildEquityChart(){
   const startEquity=10000;
 
   // Build cumulative equity curve from all closed trades (oldest→newest)
+  // Filtered by the V1/V2 toggle, same as render()'s metric cards.
   let eq=startEquity;
   const eqPts=[{x:'Start',y:eq}];
-  [...closed].reverse().forEach(t=>{eq+=t.pnl;eqPts.push({x:t.closeDate,y:parseFloat(eq.toFixed(2))})});
+  [...filteredClosed()].reverse().forEach(t=>{eq+=t.pnl;eqPts.push({x:t.closeDate,y:parseFloat(eq.toFixed(2))})});
   const finalEq=eqPts[eqPts.length-1]?.y||startEquity;
   const isUp=finalEq>=startEquity;
   const lc=isUp?THEME.chartLineUp:THEME.chartLineDown;
@@ -2675,7 +2705,7 @@ async function addTrade(){
   if(stop>=entry){err.textContent='Stop must be below entry.';return}
   if(target<=entry){err.textContent='Target must be above entry.';return}
   err.textContent='';
-  trades.push({ticker,entry,stop,target,shares,sector,company:_prefillCompany,date:new Date().toISOString().slice(0,10),week:weekNum});
+  trades.push({ticker,entry,stop,target,shares,sector,company:_prefillCompany,date:new Date().toISOString().slice(0,10),week:weekNum,modelVersion:'v2'});
   _prefillCompany='';
   save();['in-t','in-e','in-s','in-tg','in-sh'].forEach(id=>document.getElementById(id).value='');
   refreshPrices();
@@ -2911,14 +2941,18 @@ function updateLiveDisplay(){
 
   // m-pnl source: closed[].pnl (all closed trades, always fresh) + live unrealized from trades[].
   // renderTrends() totalPnl now uses the same closed[] source filtered by closeWeek.
+  // Filtered by the V1/V2 toggle, same as render() -- see the comment there.
+  const luTrades = filteredTrades(), luClosed = filteredClosed();
   let livePnl=0,liveR=0;
-  trades.forEach(t=>{const c=prices[t.ticker]||t.entry;livePnl+=(c-t.entry)*t.shares;liveR+=(c-t.entry)/Math.max(t.entry-t.stop,0.01)});
-  const cPnl=closed.reduce((s,t)=>s+t.pnl,0),cR=closed.reduce((s,t)=>s+(t.r||0),0);
+  luTrades.forEach(t=>{const c=prices[t.ticker]||t.entry;livePnl+=(c-t.entry)*t.shares;liveR+=(c-t.entry)/Math.max(t.entry-t.stop,0.01)});
+  const cPnl=luClosed.reduce((s,t)=>s+t.pnl,0),cR=luClosed.reduce((s,t)=>s+(t.r||0),0);
   const tPnl=livePnl+cPnl,tR=liveR+cR;
   const pm=document.getElementById('m-pnl');pm.textContent=fmtP(tPnl);pm.style.color=tPnl>=0?T.win:T.loss;
   document.getElementById('m-r').textContent=fmtR(tR)+' total';
 
-  // this week live boxes
+  // this week live boxes -- always ALL open positions regardless of V1/V2,
+  // this is an operational "what do I need to manage" view, not a
+  // performance-judgment one.
   const wkPnlEl=document.getElementById('wk-live-pnl');
   const wkREl=document.getElementById('wk-live-r');
   if(trades.length){
@@ -2996,20 +3030,30 @@ function render(){
 
   // m-pnl source: closed[].pnl (all closed trades, always fresh) + live unrealized from trades[].
   // renderTrends() totalPnl now uses the same closed[] source filtered by closeWeek.
+  // Change (V1/V2 split): the 6 metric cards + equity curve read filteredTrades()/
+  // filteredClosed() instead of the raw arrays, so "V2 only" can isolate the
+  // current model's real results from the retired V1 history. Every other
+  // section on Dashboard (open positions list, sector breakdown, hall of fame,
+  // season record, R distribution, etc.) intentionally keeps reading the raw
+  // arrays unfiltered -- those are historical/operational views, not the
+  // "how is the current model doing" judgment this toggle is for.
+  const mTrades = filteredTrades(), mClosed = filteredClosed();
   let livePnl=0,liveR=0;
-  trades.forEach(t=>{const c=prices[t.ticker]||t.entry;livePnl+=(c-t.entry)*t.shares;liveR+=(c-t.entry)/Math.max(t.entry-t.stop,0.01)});
-  const cPnl=closed.reduce((s,t)=>s+t.pnl,0),cR=closed.reduce((s,t)=>s+(t.r||0),0);
+  mTrades.forEach(t=>{const c=prices[t.ticker]||t.entry;livePnl+=(c-t.entry)*t.shares;liveR+=(c-t.entry)/Math.max(t.entry-t.stop,0.01)});
+  const cPnl=mClosed.reduce((s,t)=>s+t.pnl,0),cR=mClosed.reduce((s,t)=>s+(t.r||0),0);
   const tPnl=livePnl+cPnl,tR=liveR+cR;
   const pm=document.getElementById('m-pnl');pm.textContent=fmtP(tPnl);pm.style.color=tPnl>=0?T.win:T.loss;
   document.getElementById('m-r').textContent=fmtR(tR)+' total';
 
   // win rate
-  const wins=closed.filter(t=>t.pnl>0).length,losses=closed.filter(t=>t.pnl<=0).length,tot=wins+losses;
+  const wins=mClosed.filter(t=>t.pnl>0).length,losses=mClosed.filter(t=>t.pnl<=0).length,tot=wins+losses;
   const wrEl=document.getElementById('m-wr');wrEl.textContent=tot?Math.round(wins/tot*100)+'%':'—';
   wrEl.style.color=tot?(wins/tot>=0.5?T.win:T.loss):T.textPrimary;
   document.getElementById('m-wl').textContent=wins+'W / '+losses+'L';
 
   // active weeks (weeks with at least one trade logged) — was "Season record" (win-loss)
+  // Not filtered by V1/V2 -- weeks[] is a pre-aggregated per-week summary,
+  // not per-trade, so it can't be split the same way. Always all-time.
   const activeWeeks=weeks.filter(w=>w.trades>0).length;
   const mktEl=document.getElementById('m-mkt');
   mktEl.textContent=weeks.length?String(activeWeeks):'—';
@@ -3018,35 +3062,35 @@ function render(){
 
   // streak
   let s=0,st='';
-  for(let i=0;i<closed.length;i++){const w=closed[i].pnl>0;if(i===0){s=1;st=w?'W':'L'}else if((w&&st==='W')||(!w&&st==='L'))s++;else break}
+  for(let i=0;i<mClosed.length;i++){const w=mClosed[i].pnl>0;if(i===0){s=1;st=w?'W':'L'}else if((w&&st==='W')||(!w&&st==='L'))s++;else break}
   const sv=document.getElementById('m-streak');sv.textContent=s?s+st:'—';sv.style.color=st==='W'?T.win:st==='L'?T.loss:T.textPrimary;
   document.getElementById('m-streak-sub').textContent=s?'current streak':'no closed trades';
 
   // profit factor (all closed trades)
-  const grossW=closed.filter(t=>t.pnl>0).reduce((s,t)=>s+t.pnl,0);
-  const grossL=Math.abs(closed.filter(t=>t.pnl<=0).reduce((s,t)=>s+t.pnl,0));
-  const pf=closed.length?(grossL>0?(grossW/grossL).toFixed(2):'∞'):'—';
+  const grossW=mClosed.filter(t=>t.pnl>0).reduce((s,t)=>s+t.pnl,0);
+  const grossL=Math.abs(mClosed.filter(t=>t.pnl<=0).reduce((s,t)=>s+t.pnl,0));
+  const pf=mClosed.length?(grossL>0?(grossW/grossL).toFixed(2):'∞'):'—';
   const pfEl=document.getElementById('m-pf');
   if(pfEl){
     pfEl.textContent=pf;
     const pfNum=parseFloat(pf);
-    pfEl.style.color=!closed.length?T.textPrimary:pfNum>=1.3?T.win:pfNum>=1.0?T.neutral:T.loss;
+    pfEl.style.color=!mClosed.length?T.textPrimary:pfNum>=1.3?T.win:pfNum>=1.0?T.neutral:T.loss;
   }
   const pfSubEl=document.getElementById('m-pf-sub');
   if(pfSubEl){
-    pfSubEl.textContent=closed.length?`$${grossW.toFixed(0)}W / $${grossL.toFixed(0)}L`:'gross W / gross L';
+    pfSubEl.textContent=mClosed.length?`$${grossW.toFixed(0)}W / $${grossL.toFixed(0)}L`:'gross W / gross L';
   }
 
   // max drawdown (peak-to-trough on cumulative equity curve)
   const ddEl=document.getElementById('m-dd');
   const ddSubEl=document.getElementById('m-dd-sub');
   if(ddEl){
-    if(!closed.length){
+    if(!mClosed.length){
       ddEl.textContent='—';ddEl.style.color=T.textPrimary;
       if(ddSubEl)ddSubEl.textContent='peak to trough';
     } else {
       const eqCurve=[10000];
-      [...closed].reverse().forEach(t=>{eqCurve.push(eqCurve[eqCurve.length-1]+t.pnl)});
+      [...mClosed].reverse().forEach(t=>{eqCurve.push(eqCurve[eqCurve.length-1]+t.pnl)});
       let peak=eqCurve[0],maxDD=0;
       eqCurve.forEach(v=>{if(v>peak)peak=v;const dd=(peak-v)/peak*100;if(dd>maxDD)maxDD=dd});
       ddEl.textContent=maxDD.toFixed(1)+'%';
@@ -4453,9 +4497,15 @@ function buildOppReturnDistChart(){
 // closed[].pnl (systematic, $) with opportunisticPlays' realizedPnl ($) by
 // treating every closed trade from both buckets as one pool of dollar
 // outcomes, since Bucket 2 has no R-multiple to blend on equal terms.
+// Systematic side is V2-only (retired V1 legacy excluded) -- Overall is a
+// "how is my current live setup doing" view, so blending in a retired
+// model's history would recreate the exact problem it exists to solve.
+// "Total deployed right now" is the one exception -- that's a present-
+// tense operational fact (real money out there today), so it counts every
+// currently open systematic position regardless of version.
 function renderOverallMetrics(){
   const T = THEME;
-  const sysClosed = closed || [];
+  const sysClosed = (closed || []).filter(t => t.modelVersion === 'v2');
   const oppClosed = opportunisticPlays.filter(p => p.status === 'closed');
   const sysPnls = sysClosed.map(t => t.pnl||0);
   const oppPnls = oppClosed.map(p => p.realizedPnl||0);
@@ -4519,7 +4569,8 @@ function buildOverallEquityChart(){
   const canvas = document.getElementById('ov-eq-chart');
   if(!canvas) return;
 
-  const sysClosed = (closed || []).filter(t => t.closeDate).map(t => ({ date: t.closeDate, pnl: t.pnl||0 }));
+  // V2-only, same as renderOverallMetrics() -- see its comment.
+  const sysClosed = (closed || []).filter(t => t.modelVersion === 'v2' && t.closeDate).map(t => ({ date: t.closeDate, pnl: t.pnl||0 }));
   const oppClosed = opportunisticPlays.filter(p => p.status === 'closed' && p.exitDate).map(p => ({ date: p.exitDate, pnl: p.realizedPnl||0 }));
   const merged = [...sysClosed, ...oppClosed].sort((a,b) => new Date(a.date) - new Date(b.date));
 
@@ -4945,6 +4996,22 @@ async function migrateWeek7Outcomes() {
     console.log('migrateWeek7Outcomes: week 7 outcomes written');
     renderCandidatePool();
   } catch(e) { console.error('migrateWeek7Outcomes error:', e); }
+}
+
+/* ── one-time migration: tag every existing trade as V1 (the retired
+   model) so V2 trades — logged from here on, stamped in addTrade() —
+   can be told apart. Idempotent: only touches entries missing the field,
+   so it's safe to run on every login. Never mutates pnl/r/entry/etc,
+   only adds the label. ── */
+async function migrateModelVersionTags() {
+  if (!userRef) return;
+  let changed = false;
+  trades.forEach(t => { if (!t.modelVersion) { t.modelVersion = 'v1'; changed = true; } });
+  closed.forEach(t => { if (!t.modelVersion) { t.modelVersion = 'v1'; changed = true; } });
+  if (changed) {
+    save();
+    console.log('migrateModelVersionTags: tagged existing trades as v1');
+  }
 }
 
 /* ── "More" nav dropdown (position:fixed, computed via JS so it escapes
@@ -6190,6 +6257,7 @@ async function bootUser(user){
     await loadAllData();
     await migrateSitOutWeeks();
     await migrateWeek7Outcomes();
+    await migrateModelVersionTags();
     await loadCryptoData();
     console.log('[AUTH] loadAllData complete');
   }catch(e){console.error('[AUTH] loadAllData failed:',e);}
