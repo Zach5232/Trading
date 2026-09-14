@@ -6708,7 +6708,6 @@ async function bootUser(user){
   refreshPrices();
   fetchSpyHistory();
   refreshOppPrices();
-  setInterval(()=>refreshPrices(false),30000);
   setInterval(fetchSpyHistory,3600000);
   setInterval(refreshOppPrices,30000);
   console.log('[AUTH] boot complete');
