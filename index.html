@@ -1852,7 +1852,21 @@ function syncTradeAlerts(){
 }
 
 /* ── price fetching ── */
+const FINNHUB_KEY='dak20q1r01qrg9hqd0c0dak20q1r01qrg9hqd0cg';
+
 async function fetchPrice(ticker){
+  // Primary: Finnhub quote endpoint — sends proper CORS headers itself,
+  // so no third-party proxy needed (unlike Yahoo below). Free tier, 60
+  // calls/min. Falls through to Yahoo+proxies on error/rate-limit/outage.
+  try{
+    const r=await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(ticker)}&token=${FINNHUB_KEY}`,{signal:AbortSignal.timeout(5000)});
+    if(r.ok){
+      const d=await r.json();
+      // Finnhub returns c:0 (not an error) for bad/unknown symbols — treat as a miss.
+      if(d&&typeof d.c==='number'&&d.c>0) return d.c;
+    }
+  }catch(e){}
+
   const path=`/v8/finance/chart/${ticker}?interval=1d&range=1d`;
   const direct=[
     `https://query1.finance.yahoo.com${path}`,
