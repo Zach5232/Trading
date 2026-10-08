@@ -48,7 +48,12 @@ Neither model beats the opening line on accuracy, and bigger edges did not win m
 
 ## Bet selection matters more than the model
 
-The sides that were actually bet returned +6.8% (708 bets). The sheet's flagged edges that were not bet returned −6.1% (857 sides).
-That includes 192 skipped sides with a ≥5% edge at the opening line, which lost about 14%. If bets were only placed when the edge
-still held at the price available at bet time, then the line moving against the model was a strong signal that the model was wrong (goalie or injury news).
-Line snapshots (open → bet time → close) are needed to confirm this, so the automated pipeline should capture them.
+The sides that were actually bet (price in column BJ) returned +6.8% (708 bets). The sheet's flagged edges that were not bet returned −6.1% (857 sides).
+That includes 192 skipped sides with a ≥5% edge at the P/Q line, which lost about 14%.
+
+- 78% of bets were placed at exactly the P/Q price, so line movement doesn't explain most of the skips
+- Bets placed at a worse price than P/Q (the market moved toward the pick) returned +17% (130 bets), compared with +5% at the same price (556) and −3.5% at a better price (25)
+- Price range and home/away don't explain the skips either
+
+So bet selection carried real information that the sheet doesn't record. Logging every flagged game (bet or skipped, with the reason)
+and line snapshots (open → bet time → close) would show what that information is.
