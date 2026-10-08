@@ -28,3 +28,6 @@ crypto_model/Results/crypto_backtest/
 !stock_model/Results/error_log.csv
 stock_model/*.xls
 stock_model/Data/
+
+# NHL model data (downloaded / private betting data)
+nhl_model/data/
