@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NHL Board</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #16181d; --muted: #667085; --line: #e4e7ec;
+    --good: #12805c; --good-bg: #e3f4ec; --warn: #a15c07; --warn-bg: #fdf1dc; --bad: #b42318; --bad-bg: #fde8e7;
+    --chip: #eef1f5; --accent: #2f5bd3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f1115; --card: #171a21; --text: #e8eaee; --muted: #98a2b3; --line: #262b35;
+      --good: #4cc38a; --good-bg: #13291f; --warn: #f0b44c; --warn-bg: #2d2412; --bad: #f97066; --bad-bg: #2f1716;
+      --chip: #222733; --accent: #7aa2ff;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  .meta { color: var(--muted); font-size: 13px; }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-top: 16px; }
+  .tile { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .tile .k { color: var(--muted); font-size: 12px; }
+  .tile .v { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .games { display: grid; gap: 10px; }
+  .game { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .game.bet { border-color: var(--good); box-shadow: inset 4px 0 0 var(--good); }
+  .row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .teams { font-weight: 600; font-size: 16px; }
+  .badge { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+  .badge.BET { background: var(--good-bg); color: var(--good); }
+  .badge.wait { background: var(--warn-bg); color: var(--warn); }
+  .goalies { margin-top: 6px; font-size: 13px; color: var(--muted); }
+  .st { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--chip); margin-left: 4px; }
+  .st.confirmed { background: var(--good-bg); color: var(--good); }
+  .st.conflict { background: var(--bad-bg); color: var(--bad); }
+  .srcs { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 14px; margin-top: 8px;
+          font-size: 13px; font-variant-numeric: tabular-nums; }
+  .nums span { color: var(--muted); }
+  .pick { margin-top: 8px; font-size: 14px; }
+  .pos { color: var(--good); } .neg { color: var(--bad); }
+  .tablewrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; }
+  tr:last-child td { border-bottom: 0; }
+  .empty { color: var(--muted); padding: 14px; white-space: normal; }
+  details { margin-top: 28px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>NHL Board</h1>
+  <div class="meta" id="meta">Loading…</div>
+  <div class="tiles" id="tiles"></div>
+
+  <h2>Today</h2>
+  <div class="games" id="games"></div>
+
+  <h2>Goalie sources</h2>
+  <div class="tablewrap"><table id="sources"></table></div>
+
+  <h2>Pick log</h2>
+  <div class="tablewrap"><table id="picks"></table></div>
+
+  <details>
+    <summary>How this works</summary>
+    <p>Model: team offense (goals + xG), team xG against and goalie GSAx factor, all walk-forward with empty-net goals removed,
+       then blended with Pinnacle's no-vig line. A game is a <b>BET</b> only when the edge at the best available price is above the
+       threshold <i>and</i> both starting goalies are confirmed: at least one source (DailyFaceoff, RotoWire, MoneyPuck) confirms and
+       no source names a different goalie. Stake is fractional Kelly. CLV compares the flagged price with
+       Pinnacle's no-vig closing line, which is the fastest read on whether the edge is real.</p>
+  </details>
+</main>
+<script>
+const pct = (x, d = 1) => x == null ? "–" : (x * 100).toFixed(d) + "%";
+const am = o => o == null ? "–" : (o > 0 ? "+" + o : "" + o);
+const cls = x => x == null ? "" : x >= 0 ? "pos" : "neg";
+const et = iso => new Date(iso).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit" });
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+async function getJSON(path) {
+  try { const r = await fetch(path + "?t=" + Date.now()); return r.ok ? r.json() : null; } catch { return null; }
+}
+
+function tiles(rec) {
+  const t = [
+    ["Picks graded", rec.graded],
+    ["Record", `${rec.wins}-${rec.losses}`],
+    ["Flat ROI", pct(rec.roi_flat)],
+    ["Kelly P/L", rec.pl_stake == null ? "–" : "$" + rec.pl_stake.toFixed(2)],
+    ["Avg CLV", pct(rec.avg_clv)],
+    ["Beat close", pct(rec.beat_close, 0)],
+  ];
+  document.getElementById("tiles").innerHTML = t.map(([k, v]) =>
+    `<div class="tile"><div class="k">${k}</div><div class="v">${esc(v)}</div></div>`).join("");
+}
+
+function gameCard(g, books) {
+  const badgeCls = g.status === "BET" ? "BET" : g.status.startsWith("edge") ? "wait" : "";
+  const SRC = { dailyfaceoff: "DFO", rotowire: "RW", moneypuck: "MP" };
+  const gl = s => {
+    const x = g.goalies[s];
+    return `${esc(x.name || "?")}<span class="st ${x.status === "confirmed" || x.status === "conflict" ? x.status : ""}">${esc(x.status)}</span>`;
+  };
+  const srcLine = s => {
+    const src = g.goalies[s].sources || {};
+    const parts = Object.entries(src).map(([k, v]) =>
+      `${SRC[k] || k}: ${esc(v.name)}${v.status === "confirmed" ? " ✓" : v.prob != null ? " " + Math.round(v.prob * 100) + "%" : ""}`);
+    return parts.length ? `<div class="srcs">${esc(g[s])} · ${parts.join(" · ")}</div>` : "";
+  };
+  const p = g.pick;
+  const pick = p ? `<div class="pick">Best side <b>${esc(p.team)}</b> ${am(p.price)} at ${esc(books[p.book] || p.book)}
+      · edge <b class="${cls(p.edge)}">${pct(p.edge)}</b>${g.status === "BET" ? ` · stake <b>$${p.stake.toFixed(2)}</b>` : ""}</div>` : "";
+  return `<div class="game ${g.status === "BET" ? "bet" : ""}">
+    <div class="row"><div class="teams">${esc(g.away)} @ ${esc(g.home)}</div>
+      <div><span class="meta">${et(g.start)} ET</span> <span class="badge ${badgeCls}">${esc(g.status)}</span></div></div>
+    <div class="goalies">${esc(g.away)}: ${gl("away")} · ${esc(g.home)}: ${gl("home")}
+      ${g.b2b.away ? " · " + esc(g.away) + " B2B" : ""}${g.b2b.home ? " · " + esc(g.home) + " B2B" : ""}</div>
+    ${srcLine("away")}${srcLine("home")}
+    <div class="nums">
+      <div><span>Model (home)</span><br>${pct(g.p_model)}</div>
+      <div><span>${esc(g.market_source || "Market")} (home)</span><br>${pct(g.p_market)}</div>
+      <div><span>Blend (home)</span><br><b>${pct(g.p_blend)}</b></div>
+      <div><span>xG</span><br>${g.lam.away} – ${g.lam.home}</div>
+    </div>${pick}</div>`;
+}
+
+function sourcesTable(scores, live) {
+  const el = document.getElementById("sources");
+  const names = { dailyfaceoff: "DailyFaceoff", rotowire: "RotoWire", moneypuck: "MoneyPuck", consensus: "Consensus (BET rule)" };
+  const rows = Object.entries(scores || {});
+  if (!rows.length) {
+    el.innerHTML = `<tr><td class="empty">Reading ${esc(live.map(k => names[k] || k).join(", ") || "no sources")}. Accuracy shows up after the first games are graded.</td></tr>`;
+    return;
+  }
+  el.innerHTML = `<tr><th>Source</th><th>Final listing right</th><th>Confirmations right</th><th>Median confirm lead</th></tr>` +
+    rows.map(([k, v]) => `<tr><td>${esc(names[k] || k)}</td><td>${pct(v.listed_acc, 0)} (${v.listed})</td>
+      <td>${pct(v.confirmed_acc, 0)} (${v.confirmed})</td>
+      <td>${v.median_lead_min == null ? "–" : Math.round(v.median_lead_min) + " min"}</td></tr>`).join("");
+}
+
+function picksTable(picks, books) {
+  const rows = Object.values(picks).sort((a, b) => b.start.localeCompare(a.start));
+  const el = document.getElementById("picks");
+  if (!rows.length) { el.innerHTML = `<tr><td class="empty">No picks yet.</td></tr>`; return; }
+  el.innerHTML = `<tr><th>Date</th><th>Game</th><th>Pick</th><th>Price</th><th>Edge</th><th>Stake</th>
+      <th>Close (same book)</th><th>CLV</th><th>Result</th><th>P/L</th></tr>` +
+    rows.map(p => `<tr><td>${esc(p.date)}</td><td>${esc(p.away)} @ ${esc(p.home)}</td><td><b>${esc(p.team)}</b></td>
+      <td>${am(p.price)} ${esc(books[p.book] || p.book)}</td><td>${pct(p.edge)}</td><td>$${p.stake.toFixed(2)}</td>
+      <td>${am(p.close_price)}</td><td class="${cls(p.clv)}">${pct(p.clv)}</td>
+      <td>${esc(p.result || (p.latest && !p.latest.still_flagged ? "pending · edge gone" : "pending"))}</td>
+      <td class="${cls(p.pl_stake)}">${p.pl_stake == null ? "–" : "$" + p.pl_stake.toFixed(2)}</td></tr>`).join("");
+}
+
+(async () => {
+  const [board, picks] = await Promise.all([getJSON("data/board.json"), getJSON("data/picks.json")]);
+  if (!board) { document.getElementById("meta").textContent = "No board yet: the pipeline hasn't run."; return; }
+  const upd = new Date(board.updated).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" });
+  document.getElementById("meta").textContent =
+    `${board.date} · updated ${upd} ET · bet when edge ≥ ${pct(board.config.edge_threshold, 0)} and both goalies confirmed` +
+    (board.odds_credits_remaining != null ? ` · odds credits left ${board.odds_credits_remaining}` : "");
+  tiles(board.record);
+  const games = board.games.slice().sort((a, b) => (b.status === "BET") - (a.status === "BET") || a.start.localeCompare(b.start));
+  document.getElementById("games").innerHTML = games.length ? games.map(g => gameCard(g, board.book_names)).join("")
+    : `<div class="game empty">No games today.</div>`;
+  sourcesTable(board.goalie_source_scores, board.goalie_sources || []);
+  picksTable(picks || {}, board.book_names);
+})();
+</script>
+</body>
+</html>

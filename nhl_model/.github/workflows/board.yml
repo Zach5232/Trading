@@ -1,0 +1,48 @@
+name: NHL board
+
+on:
+  schedule:
+    # All times UTC. Morning ratings rebuild + grading + opening lines (~11am ET).
+    - cron: '7 15 * * *'
+    # Weekend matinees: hourly around midday ET.
+    - cron: '37 16-19 * * 0,6'
+    # Evening slate: every 30 min from 5pm to ~10:30pm ET (goalie confirmations, closing lines).
+    - cron: '*/30 21-23 * * *'
+    - cron: '*/30 0-2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: board
+  cancel-in-progress: false
+
+jobs:
+  board:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Run board
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+        run: python board.py
+
+      - name: Commit data
+        run: |
+          git config user.name "nhl-board-bot"
+          git config user.email "nhl-board-bot@users.noreply.github.com"
+          git add state site/data
+          if git diff --cached --quiet; then echo "no changes"; exit 0; fi
+          git commit -m "board: $(date -u +%Y-%m-%dT%H:%MZ)"
+          for i in 1 2 3; do git pull --rebase -q && git push -q && exit 0; sleep 5; done
+          exit 1
