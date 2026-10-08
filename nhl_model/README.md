@@ -46,14 +46,18 @@ Betting every side with an edge at the opening line (flat 1u):
 
 Neither model beats the opening line on accuracy, and bigger edges did not win more.
 
-## Bet selection matters more than the model
+## Bet selection (sheet ROI column BB > 3% rule)
 
-The sides that were actually bet (price in column BJ) returned +6.8% (708 bets). The sheet's flagged edges that were not bet returned −6.1% (857 sides).
-That includes 192 skipped sides with a ≥5% edge at the P/Q line, which lost about 14%.
+| BB > 3% games | games | ROI |
+|---|---|---|
+| All qualifying games (rule followed mechanically) | 892 | +1.0% |
+| Bet | 610 | +6.7% |
+| Skipped | 282 | −12% |
+| Sheet goalie ≠ actual starter | 123 | −18% |
+| Sheet goalie correct (rule + confirmed goalie) | 769 | +4.1% |
 
-- 78% of bets were placed at exactly the P/Q price, so line movement doesn't explain most of the skips
-- Bets placed at a worse price than P/Q (the market moved toward the pick) returned +17% (130 bets), compared with +5% at the same price (556) and −3.5% at a better price (25)
-- Price range and home/away don't explain the skips either
+Wrong projected goalies explain part of the gap (28% of skipped games vs 7% of bets). The remaining 204 skipped games with the
+correct goalie still lost 8%, while the bets with the correct goalie won 8.5%. The pipeline should only price games after goalie confirmation
+and log every flagged game, bet or skipped, with a reason, plus line snapshots (open → bet time → close).
 
-So bet selection carried real information that the sheet doesn't record. Logging every flagged game (bet or skipped, with the reason)
-and line snapshots (open → bet time → close) would show what that information is.
+Bets placed at a worse price than the sheet line (the market moved toward the pick) returned +17% (130 bets).
