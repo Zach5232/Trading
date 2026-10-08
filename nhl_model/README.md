@@ -79,3 +79,18 @@ All results are out-of-sample. Each variant's blended probability is compared ag
 
 None of the stat tweaks improve on the market. Public team and goalie stats are already in the line, so the remaining gains are
 in information timing (confirmed goalies, injuries), line shopping, and measuring closing-line value.
+
+## Live pipeline (`board.py`)
+
+GitHub Actions (`.github/workflows/board.yml`) runs `board.py` at about 11am ET, hourly around midday on weekends,
+and every 30 minutes from 5pm to 10:30pm ET. It commits `state/` and `site/data/`, and Netlify serves `site/`.
+
+Each run:
+1. Rebuilds ratings once a day (MoneyPuck goalie logs for the last 6 seasons plus NHL API results), using the backtested model and the constants in `model_config.json` (`fit_live.py`)
+2. Gets starting goalies from DailyFaceoff; teams without a listed goalie use their most frequent starter from the last 10 games
+3. Snapshots moneylines from Pinnacle plus 9 books you bet at (1 Odds API credit per run), saving every line change
+4. Blends the model with Pinnacle's no-vig line (weights 0.28 model / 0.72 market, fit on 2022-25) and takes the best price across your books
+5. Marks a game **BET** only when the edge is at least 3% and both goalies are confirmed. Stake is 1/8 Kelly on a $100 unit
+6. Logs every flagged pick, then grades it after the game: result, closing price at the same book, and CLV against Pinnacle's no-vig close
+
+Secrets: `ODDS_API_KEY`. The schedule uses about 13 Odds API credits a day (about 400 a month).

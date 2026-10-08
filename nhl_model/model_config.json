@@ -1,0 +1,21 @@
+{
+ "params": {
+  "a": 0.5,
+  "k": 20.0,
+  "rho": 0.6,
+  "kg": 150.0,
+  "decay": 0.6,
+  "f_new": 1.02,
+  "hl": null,
+  "sva": false
+ },
+ "home": 0.13012085128589598,
+ "slope": 2.7112214104221795,
+ "b2b": 0.35156736476743533,
+ "w_model": 0.2778891556126035,
+ "w_market": 0.720324043282983,
+ "edge_threshold": 0.03,
+ "kelly_fraction": 0.125,
+ "unit": 100,
+ "fit_note": "fit on 5248 games 2021-22..2024-25; blend on 2183 sheet games with lines"
+}

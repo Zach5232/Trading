@@ -31,3 +31,5 @@ stock_model/Data/
 
 # NHL model data (downloaded / private betting data)
 nhl_model/data/
+nhl_model/state/
+nhl_model/site/data/
