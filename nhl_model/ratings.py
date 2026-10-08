@@ -29,7 +29,9 @@ NORM = {"N.J": "NJD", "T.B": "TBL", "S.J": "SJS", "L.A": "LAK"}
 # Franchise continuity for priors (ARI -> UTA in 2024-25)
 PREV_ABBREV = {"UTA": "ARI"}
 
-DEFAULTS = dict(a=0.5, k=20.0, rho=0.6, kg=40.0, decay=0.6, f_new=1.02)
+# hl: in-season recency half-life in games (None = all games weighted equally)
+# sva: use MoneyPuck score/venue-adjusted team xG instead of xG faced by goalies
+DEFAULTS = dict(a=0.5, k=20.0, rho=0.6, kg=40.0, decay=0.6, f_new=1.02, hl=None, sva=False)
 
 
 def load_games():
@@ -49,6 +51,9 @@ def load_games():
     games["date"] = pd.to_datetime(games.date)
     games = games.sort_values(["date", "id"]).reset_index(drop=True)
 
+    t = pd.read_csv(os.path.join(DATA, "teams_gbg.csv"))
+    t["team"] = t.team.replace(NORM)
+    sva = t.set_index(["gameId", "team"])[["scoreVenueAdjustedxGoalsFor"]]
     pt = per_team.set_index(["gameId", "playerTeam"])
     st = starters.set_index(["gameId", "playerTeam"])
     rows = []
@@ -61,19 +66,25 @@ def load_games():
             gameId=r.id, season=r.season, date=r.date, home=r.home, away=r.away,
             hg=r.hg, ag=r.ag, last=r.last,
             h_GA=h.GA, h_xGA=h.xGA, a_GA=a.GA, a_xGA=a.xGA,
+            h_sxGF=sva.scoreVenueAdjustedxGoalsFor.get((r.id, r.home), float("nan")),
+            a_sxGF=sva.scoreVenueAdjustedxGoalsFor.get((r.id, r.away), float("nan")),
             h_goalie=st.loc[(r.id, r.home)].playerId, a_goalie=st.loc[(r.id, r.away)].playerId,
         ))
     df = pd.DataFrame(rows)
-    # back-to-back from the schedule itself
-    last_played = {}
-    hb2b, ab2b = [], []
+    # rest from the schedule itself: back-to-back, days of rest (capped at 4), 3 games in 4 nights
+    played = defaultdict(list)
+    feats = {k: [] for k in ("h_b2b", "a_b2b", "h_rest", "a_rest", "h_3in4", "a_3in4")}
     for r in df.itertuples():
-        for team, out in ((r.home, hb2b), (r.away, ab2b)):
-            prev = last_played.get(team)
-            out.append(prev is not None and (r.date - prev).days == 1)
+        for team, side in ((r.home, "h"), (r.away, "a")):
+            prev = played[team]
+            days = (r.date - prev[-1]).days if prev else 4
+            feats[f"{side}_b2b"].append(days == 1)
+            feats[f"{side}_rest"].append(min(days, 4))
+            feats[f"{side}_3in4"].append(len(prev) >= 2 and (r.date - prev[-2]).days <= 3)
         for team in (r.home, r.away):
-            last_played[team] = r.date
-    df["h_b2b"], df["a_b2b"] = hb2b, ab2b
+            played[team].append(r.date)
+    for k, v in feats.items():
+        df[k] = v
     return df, goalie_games
 
 
@@ -81,6 +92,7 @@ def compute(df, goalie_games, p=None):
     """Return df with pre-game lam_home / lam_away / goalie factors under params p."""
     p = {**DEFAULTS, **(p or {})}
     a, k, rho, kg, decay, f_new = p["a"], p["k"], p["rho"], p["kg"], p["decay"], p["f_new"]
+    shrink = 0.5 ** (1 / p["hl"]) if p["hl"] else 1.0
 
     gg = goalie_games.set_index("gameId")
     goalie_ga = defaultdict(float)
@@ -135,8 +147,14 @@ def compute(df, goalie_games, p=None):
             out["L"].append(xL)
         # update after the whole day (ratings never see same-day results)
         for r in day.itertuples():
-            for t, gf, xgf, xga in ((r.home, r.a_GA, r.a_xGA, r.h_xGA), (r.away, r.h_GA, r.h_xGA, r.a_xGA)):
+            if p["sva"]:
+                xg_h, xg_a = r.h_sxGF, r.a_sxGF  # xG created by home / away
+            else:
+                xg_h, xg_a = r.a_xGA, r.h_xGA
+            for t, gf, xgf, xga in ((r.home, r.a_GA, xg_h, xg_a), (r.away, r.h_GA, xg_a, xg_h)):
                 c = cur[t]
+                for key in c:
+                    c[key] *= shrink
                 c["gp"] += 1; c["GF"] += gf; c["xGF"] += xgf; c["xGA"] += xga
             for _, gr in gg.loc[[r.gameId]].iterrows():
                 goalie_ga[gr.playerId] += gr.goals

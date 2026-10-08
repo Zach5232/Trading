@@ -61,3 +61,21 @@ correct goalie still lost 8%, while the bets with the correct goalie won 8.5%. T
 and log every flagged game, bet or skipped, with a reason, plus line snapshots (open → bet time → close).
 
 Bets placed at a worse price than the sheet line (the market moved toward the pick) returned +17% (130 bets).
+
+## Experiments (`experiments.py`)
+
+All results are out-of-sample. Each variant's blended probability is compared against the opening line:
+
+| Variant | Log loss, all games | Blend vs market (0.6601) | 3%-rule ROI |
+|---|---|---|---|
+| Baseline (tuned) | 0.6582 | 0.6605 | −6.0% (247) |
+| + days of rest | 0.6582 | 0.6606 | −6.3% (273) |
+| + 3-in-4 nights | 0.6581 | 0.6605 | −3.9% (281) |
+| Recency half-life 20 games | 0.6585 | 0.6608 | +0.8% (288) |
+| Recency half-life 40 games | 0.6581 | 0.6607 | −2.9% (286) |
+| Score/venue-adjusted xG | 0.6584 | 0.6607 | −8.2% (151) |
+| xG only | 0.6596 | 0.6601 | −3.6% (344) |
+| Goalie history, no decay | 0.6583 | 0.6605 | −1.0% (232) |
+
+None of the stat tweaks improve on the market. Public team and goalie stats are already in the line, so the remaining gains are
+in information timing (confirmed goalies, injuries), line shopping, and measuring closing-line value.
