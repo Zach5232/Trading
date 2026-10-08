@@ -39,6 +39,8 @@
   .goalies { margin-top: 6px; font-size: 13px; color: var(--muted); }
   .st { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--chip); margin-left: 4px; }
   .st.confirmed { background: var(--good-bg); color: var(--good); }
+  .st.conflict { background: var(--bad-bg); color: var(--bad); }
+  .srcs { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 14px; margin-top: 8px;
           font-size: 13px; font-variant-numeric: tabular-nums; }
   .nums span { color: var(--muted); }
@@ -49,7 +51,7 @@
   th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
   th { color: var(--muted); font-weight: 500; }
   tr:last-child td { border-bottom: 0; }
-  .empty { color: var(--muted); padding: 14px; }
+  .empty { color: var(--muted); padding: 14px; white-space: normal; }
   details { margin-top: 28px; color: var(--muted); font-size: 13px; }
 </style>
 </head>
@@ -62,6 +64,9 @@
   <h2>Today</h2>
   <div class="games" id="games"></div>
 
+  <h2>Goalie sources</h2>
+  <div class="tablewrap"><table id="sources"></table></div>
+
   <h2>Pick log</h2>
   <div class="tablewrap"><table id="picks"></table></div>
 
@@ -69,7 +74,8 @@
     <summary>How this works</summary>
     <p>Model: team offense (goals + xG), team xG against and goalie GSAx factor, all walk-forward with empty-net goals removed,
        then blended with Pinnacle's no-vig line. A game is a <b>BET</b> only when the edge at the best available price is above the
-       threshold <i>and</i> both starting goalies are confirmed. Stake is fractional Kelly. CLV compares the flagged price with
+       threshold <i>and</i> both starting goalies are confirmed: at least one source (DailyFaceoff, RotoWire, MoneyPuck) confirms and
+       no source names a different goalie. Stake is fractional Kelly. CLV compares the flagged price with
        Pinnacle's no-vig closing line, which is the fastest read on whether the edge is real.</p>
   </details>
 </main>
@@ -99,9 +105,16 @@ function tiles(rec) {
 
 function gameCard(g, books) {
   const badgeCls = g.status === "BET" ? "BET" : g.status.startsWith("edge") ? "wait" : "";
+  const SRC = { dailyfaceoff: "DFO", rotowire: "RW", moneypuck: "MP" };
   const gl = s => {
     const x = g.goalies[s];
-    return `${esc(x.name || "?")}<span class="st ${x.status === "confirmed" ? "confirmed" : ""}">${esc(x.status)}</span>`;
+    return `${esc(x.name || "?")}<span class="st ${x.status === "confirmed" || x.status === "conflict" ? x.status : ""}">${esc(x.status)}</span>`;
+  };
+  const srcLine = s => {
+    const src = g.goalies[s].sources || {};
+    const parts = Object.entries(src).map(([k, v]) =>
+      `${SRC[k] || k}: ${esc(v.name)}${v.status === "confirmed" ? " ✓" : v.prob != null ? " " + Math.round(v.prob * 100) + "%" : ""}`);
+    return parts.length ? `<div class="srcs">${esc(g[s])} · ${parts.join(" · ")}</div>` : "";
   };
   const p = g.pick;
   const pick = p ? `<div class="pick">Best side <b>${esc(p.team)}</b> ${am(p.price)} at ${esc(books[p.book] || p.book)}
@@ -111,12 +124,27 @@ function gameCard(g, books) {
       <div><span class="meta">${et(g.start)} ET</span> <span class="badge ${badgeCls}">${esc(g.status)}</span></div></div>
     <div class="goalies">${esc(g.away)}: ${gl("away")} · ${esc(g.home)}: ${gl("home")}
       ${g.b2b.away ? " · " + esc(g.away) + " B2B" : ""}${g.b2b.home ? " · " + esc(g.home) + " B2B" : ""}</div>
+    ${srcLine("away")}${srcLine("home")}
     <div class="nums">
       <div><span>Model (home)</span><br>${pct(g.p_model)}</div>
       <div><span>${esc(g.market_source || "Market")} (home)</span><br>${pct(g.p_market)}</div>
       <div><span>Blend (home)</span><br><b>${pct(g.p_blend)}</b></div>
       <div><span>xG</span><br>${g.lam.away} – ${g.lam.home}</div>
     </div>${pick}</div>`;
+}
+
+function sourcesTable(scores, live) {
+  const el = document.getElementById("sources");
+  const names = { dailyfaceoff: "DailyFaceoff", rotowire: "RotoWire", moneypuck: "MoneyPuck", consensus: "Consensus (BET rule)" };
+  const rows = Object.entries(scores || {});
+  if (!rows.length) {
+    el.innerHTML = `<tr><td class="empty">Reading ${esc(live.map(k => names[k] || k).join(", ") || "no sources")}. Accuracy shows up after the first games are graded.</td></tr>`;
+    return;
+  }
+  el.innerHTML = `<tr><th>Source</th><th>Final listing right</th><th>Confirmations right</th><th>Median confirm lead</th></tr>` +
+    rows.map(([k, v]) => `<tr><td>${esc(names[k] || k)}</td><td>${pct(v.listed_acc, 0)} (${v.listed})</td>
+      <td>${pct(v.confirmed_acc, 0)} (${v.confirmed})</td>
+      <td>${v.median_lead_min == null ? "–" : Math.round(v.median_lead_min) + " min"}</td></tr>`).join("");
 }
 
 function picksTable(picks, books) {
@@ -137,12 +165,13 @@ function picksTable(picks, books) {
   if (!board) { document.getElementById("meta").textContent = "No board yet: the pipeline hasn't run."; return; }
   const upd = new Date(board.updated).toLocaleString("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "short" });
   document.getElementById("meta").textContent =
-    `${board.date} · updated ${upd} ET · goalies: ${board.goalie_source} · bet when edge ≥ ${pct(board.config.edge_threshold, 0)}` +
+    `${board.date} · updated ${upd} ET · bet when edge ≥ ${pct(board.config.edge_threshold, 0)} and both goalies confirmed` +
     (board.odds_credits_remaining != null ? ` · odds credits left ${board.odds_credits_remaining}` : "");
   tiles(board.record);
   const games = board.games.slice().sort((a, b) => (b.status === "BET") - (a.status === "BET") || a.start.localeCompare(b.start));
   document.getElementById("games").innerHTML = games.length ? games.map(g => gameCard(g, board.book_names)).join("")
     : `<div class="game empty">No games today.</div>`;
+  sourcesTable(board.goalie_source_scores, board.goalie_sources || []);
   picksTable(picks || {}, board.book_names);
 })();
 </script>

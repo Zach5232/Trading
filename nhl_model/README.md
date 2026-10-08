@@ -87,7 +87,7 @@ and every 30 minutes from 5pm to 10:30pm ET. It commits `state/` and `site/data/
 
 Each run:
 1. Rebuilds ratings once a day (MoneyPuck goalie logs for the last 6 seasons plus NHL API results), using the backtested model and the constants in `model_config.json` (`fit_live.py`)
-2. Gets starting goalies from DailyFaceoff; teams without a listed goalie use their most frequent starter from the last 10 games
+2. Reads starting goalies from DailyFaceoff, RotoWire and MoneyPuck. A goalie counts as confirmed when at least one source confirms and none names someone else; every change is logged, and each source is graded against the actual starter (NHL boxscore) for accuracy and lead time. LeftWingLock needs a paid account, LineupExperts blocks bots (Cloudflare), and GoaliePost is still blocked by the network allowlist
 3. Snapshots moneylines from Pinnacle plus 9 books you bet at (1 Odds API credit per run), saving every line change
 4. Blends the model with Pinnacle's no-vig line (weights 0.28 model / 0.72 market, fit on 2022-25) and takes the best price across your books
 5. Marks a game **BET** only when the edge is at least 3% and both goalies are confirmed. Stake is 1/8 Kelly on a $100 unit

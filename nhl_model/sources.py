@@ -90,6 +90,17 @@ def final_score(game_id):
     return d["awayTeam"].get("score"), d["homeTeam"].get("score"), d.get("gameState")
 
 
+def starting_goalies(game_id):
+    """{'home': playerId, 'away': playerId} of the goalies who actually started (after the game)."""
+    d = get(f"{NHL}/gamecenter/{game_id}/boxscore").json()
+    out = {}
+    for side, key in (("home", "homeTeam"), ("away", "awayTeam")):
+        for g in d.get("playerByGameStats", {}).get(key, {}).get("goalies", []):
+            if g.get("starter"):
+                out[side] = g["playerId"]
+    return out
+
+
 # ---------------- MoneyPuck ----------------
 
 def moneypuck_goalie_logs(seasons):
@@ -150,45 +161,107 @@ def match_event(events, game):
     return None
 
 
-# ---------------- DailyFaceoff starting goalies ----------------
+# ---------------- Starting goalie sources ----------------
+#
+# Every reader returns a list of entries:
+#   {source, home, away (NHL abbrevs, or None), home_team, away_team (full names, for matching),
+#    home_goalie, away_goalie (names), home_status, away_status ('confirmed' | 'likely' | 'unconfirmed'),
+#    home_prob, away_prob (MoneyPuck's start probability, else None), home_note, away_note}
+# A reader that fails returns [] and prints why, so one broken site never stops the board.
 
-def dailyfaceoff_goalies(date):
-    """[{away_team, home_team, away_goalie, home_goalie, away_status, home_status}] for an ET date.
+ABBREV_ALIAS = {"LA": "LAK", "NJ": "NJD", "SJ": "SJS", "TB": "TBL", "WAS": "WSH", "VEG": "VGK",
+                "MON": "MTL", "CLS": "CBJ", "NAS": "NSH", "CAL": "CGY", "UTAH": "UTA", "WPJ": "WPG"}
 
-    Statuses are DailyFaceoff's ('Confirmed', 'Likely', 'Unconfirmed', ...). Returns [] if the
-    page can't be read, so the pipeline falls back to projected starters.
-    """
+
+def _abbrev(a):
+    a = (a or "").upper().strip()
+    return ABBREV_ALIAS.get(a, a) or None
+
+
+def _status(raw):
+    r = (raw or "").lower()
+    if "confirm" in r:
+        return "confirmed"
+    if any(k in r for k in ("likely", "expected", "probable", "projected")):
+        return "likely"
+    return "unconfirmed"
+
+
+def goalies_dailyfaceoff(date):
     try:
         r = get(f"https://www.dailyfaceoff.com/starting-goalies/{date}")
         m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', r.text, re.S)
-        if not m:
-            return []
-        data = json.loads(m.group(1))
-    except Exception as e:  # network / layout change
+        games = json.loads(m.group(1))["props"]["pageProps"]["data"]
+    except Exception as e:
         print(f"[goalies] DailyFaceoff unavailable: {e}")
         return []
-
-    found = []
-
-    def walk(x):
-        if isinstance(x, dict):
-            if "homeGoalieName" in x and "awayGoalieName" in x:
-                found.append(x)
-                return
-            for v in x.values():
-                walk(v)
-        elif isinstance(x, list):
-            for v in x:
-                walk(v)
-    walk(data)
     out = []
-    for g in found:
-        out.append(dict(
-            home_team=g.get("homeTeamName") or g.get("homeTeamSlug") or "",
-            away_team=g.get("awayTeamName") or g.get("awayTeamSlug") or "",
-            home_goalie=g.get("homeGoalieName"), away_goalie=g.get("awayGoalieName"),
-            home_status=g.get("homeNewsStrengthName") or "", away_status=g.get("awayNewsStrengthName") or "",
-        ))
-    if not out:
-        print("[goalies] DailyFaceoff page parsed but no goalie entries found (layout changed?)")
+    for g in games:
+        e = dict(source="dailyfaceoff", home=None, away=None)
+        for side in ("home", "away"):
+            e[f"{side}_team"] = g.get(f"{side}TeamName") or ""
+            e[f"{side}_goalie"] = g.get(f"{side}GoalieName")
+            e[f"{side}_status"] = _status(g.get(f"{side}NewsStrengthName"))
+            e[f"{side}_prob"] = None
+            e[f"{side}_note"] = g.get(f"{side}NewsSourceName") or None
+        out.append(e)
     return out
+
+
+def goalies_rotowire(date):
+    try:
+        games = get("https://www.rotowire.com/hockey/tables/projected-goalies.php", params={"date": date}).json()
+    except Exception as e:
+        print(f"[goalies] RotoWire unavailable: {e}")
+        return []
+    out = []
+    for g in games:
+        out.append(dict(
+            source="rotowire", home=_abbrev(g.get("hometeam")), away=_abbrev(g.get("visitteam")),
+            home_team="", away_team="",
+            home_goalie=g.get("homePlayer"), away_goalie=g.get("visitPlayer"),
+            home_status=_status(g.get("homeStatus")), away_status=_status(g.get("visitStatus")),
+            home_prob=None, away_prob=None, home_note=None, away_note=None))
+    return out
+
+
+def goalies_moneypuck(date):
+    """MoneyPuck's games page: confirmed starters ('Starter: X', with the source) or start probabilities."""
+    try:
+        t = get(f"https://moneypuck.com/moneypuck/dates/{date.replace('-', '')}.htm").text
+    except Exception as e:
+        print(f"[goalies] MoneyPuck unavailable: {e}")
+        return []
+    t = re.sub(r"\s+", " ", t)
+    out = []
+    for row in re.findall(r"<tr>(.*?)</tr>", t, re.S | re.I):
+        teams = re.findall(r"logos/([A-Z.]+)\.png", row)
+        gid = re.search(r"preview\.htm\?id=(\d+)", row)
+        cells = re.findall(r"<h2>\s*[\d.]+%\s*</h2>(.*?)</td>", row, re.S | re.I)
+        if len(teams) != 2 or not gid or len(cells) != 2:
+            continue
+        e = dict(source="moneypuck", game_id=int(gid.group(1)), away=_abbrev(teams[0]), home=_abbrev(teams[1]),
+                 home_team="", away_team="")
+        for side, cell in (("away", cells[0]), ("home", cells[1])):
+            text = re.sub(r"<[^>]+>", " ", cell)
+            text = re.sub(r"\s+", " ", text).strip()
+            conf = re.search(r"Starter:\s*([^:]+?)\s+Source:\s*(\S+)", text)
+            prob = re.search(r"Starter:\s*([^:]+?):\s*([\d.]+)%", text)
+            if conf:
+                e[f"{side}_goalie"], e[f"{side}_status"], e[f"{side}_prob"], e[f"{side}_note"] = \
+                    conf.group(1).strip(), "confirmed", 1.0, conf.group(2)
+            elif prob:
+                p = float(prob.group(2)) / 100
+                e[f"{side}_goalie"], e[f"{side}_status"], e[f"{side}_prob"], e[f"{side}_note"] = \
+                    prob.group(1).strip(), "likely" if p >= 0.5 else "unconfirmed", p, None
+            else:
+                e[f"{side}_goalie"], e[f"{side}_status"], e[f"{side}_prob"], e[f"{side}_note"] = None, "unconfirmed", None, None
+        out.append(e)
+    return out
+
+
+GOALIE_SOURCES = {"dailyfaceoff": goalies_dailyfaceoff, "rotowire": goalies_rotowire, "moneypuck": goalies_moneypuck}
+
+
+def all_goalie_sources(date):
+    return {name: fn(date) for name, fn in GOALIE_SOURCES.items()}
