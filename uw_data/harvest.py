@@ -67,9 +67,10 @@ class OutOfBudget(Exception):
 def _is_quota_error(r):
     """A request/rate quota refusal (stop the run) vs. a plan-tier refusal (mark the endpoint .err)."""
     body = r.text.lower()
-    if "tier" in body or "premium" in body or "access" in body:
+    if any(w in body for w in ("tier", "premium", "access", "invalid", "not found")):
         return False
-    return "limit" in body or "quota" in body
+    return "quota" in body or "too many" in body or ("limit" in body and any(
+        w in body for w in ("daily", "request limit", "rate limit", "exceeded", "reached")))
 
 
 class Client:
@@ -284,7 +285,6 @@ def load_universe():
             tickers = []
     seen, out = set(), []
     for t in list(tickers) + EXTRA_TICKERS + FOCUS:
-        t = t.replace(".", "-") if "." in t else t
         if t not in seen:
             seen.add(t)
             out.append(t)
