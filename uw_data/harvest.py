@@ -367,7 +367,22 @@ def p3_tasks(days, focus):
 
 
 # ---------------------------------------------------------------- flow alerts (paginated by time)
-MAX_ALERT_PAGES = 60
+MAX_ALERT_PAGES = 400       # busy days run to 60+ pages of 200 alerts
+OLD_CAP = 60                # earlier runs stopped here; a day saved with exactly 60 pages is unfinished
+
+
+def _read_archived(path):
+    """Read a stored page from disk, or from git when the checkout left it out."""
+    try:
+        with gzip.open(path, "rt") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        import subprocess
+        rel = path.resolve().relative_to(HERE.parent).as_posix()
+        out = subprocess.run(["git", "-C", str(HERE.parent), "show", f"HEAD:{rel}"], capture_output=True)
+        if out.returncode != 0:
+            return None
+        return json.loads(gzip.decompress(out.stdout))
 
 
 def _row_ms(row):
@@ -386,18 +401,27 @@ def _row_ms(row):
 
 def harvest_flow_alerts(client, d):
     """All flow alerts for one session, newest page first, walking older_than back to the open."""
-    day_dir = RAW / "flow_alerts" / d.isoformat()
-    if (day_dir / "complete").exists() or f"flow_alerts/{d.isoformat()}/complete" in DONE_LIST \
-            or done(out_path("flow_alerts", d.isoformat())):
+    ds = d.isoformat()
+    day_dir = RAW / "flow_alerts" / ds
+    if done(out_path("flow_alerts", ds)):
+        return "skip"
+    # pages saved so far: on disk, or already in the archive (GitHub Action checkouts leave them out)
+    pages = sorted({f.name for f in day_dir.glob("p*.json.gz")} |
+                   {n.split("/")[-1] for n in DONE_LIST if n.startswith(f"flow_alerts/{ds}/p")})
+    complete = (day_dir / "complete").exists() or f"flow_alerts/{ds}/complete" in DONE_LIST
+    if complete and len(pages) != OLD_CAP:
         return "skip"
     start = int(dt.datetime(d.year, d.month, d.day, 4, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
     end = int((dt.datetime(d.year, d.month, d.day, 4, 0, tzinfo=dt.timezone.utc) + dt.timedelta(days=1)).timestamp() * 1000)
     older = end
-    existing = sorted(day_dir.glob("p*.json.gz"))
-    if existing:  # resume after the last saved page
-        with gzip.open(existing[-1], "rt") as f:
-            older = json.load(f)["_request"]["next_older_than"]
-    page = len(existing)
+    if pages:  # resume after the last saved page
+        last = _read_archived(day_dir / pages[-1])
+        older = last["_request"]["next_older_than"] if last else None
+        if not older:                       # last page was the end of the day after all
+            (day_dir).mkdir(parents=True, exist_ok=True)
+            (day_dir / "complete").write_text(str(len(pages)))
+            return "skip"
+    page = len(pages)
     while page < MAX_ALERT_PAGES:
         params = {"newer_than": start, "older_than": older, "limit": 200}
         r = client.get("/api/option-trades/flow-alerts", params)
