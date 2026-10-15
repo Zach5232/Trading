@@ -319,10 +319,14 @@ def p1_tasks(tickers, earliest, today):
         q = urllib.parse.quote(s)
         t += [("options_volume", s, f"/api/stock/{q}/options-volume", {"limit": 500}),
               ("greek_exposure", s, f"/api/stock/{q}/greek-exposure", {"timeframe": tf}),
-              ("iv_rank", s, f"/api/stock/{q}/iv-rank", {"timespan": earliest.isoformat()}),
-              ("risk_reversal_skew", s, f"/api/stock/{q}/historical-risk-reversal-skew", {"timeframe": tf}),
               ("ohlc_1d", s, f"/api/stock/{q}/ohlc/1d", {"timeframe": tf, "limit": 2500}),
               ("short_volume", s, f"/api/shorts/{q}/volume-and-ratio", None)]
+        # iv-rank returns at most a year per request: walk back a year at a time from today
+        end = today
+        while end > earliest:
+            t.append(("iv_rank", f"{s}_{end.isoformat()}", f"/api/stock/{q}/iv-rank",
+                      {"date": end.isoformat(), "timespan": "1y"}))
+            end = end - dt.timedelta(days=365)
     return t
 
 

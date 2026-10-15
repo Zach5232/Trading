@@ -29,7 +29,7 @@ caches it in `data/state.json`.
 | Tier | Requests | Datasets |
 |---|---|---|
 | snap | ~40 per day | Prediction-market smart money, unusual markets, whales, insiders; movers; economic, FDA and congress calendars. **These have no history**, so each day you skip is lost. |
-| p1 | ~6 per ticker (S&P 500 + ETFs) | Full history in one call each: daily options volume and premium, greek exposure (GEX), IV rank, risk-reversal skew, daily bars, short volume |
+| p1 | ~6 per ticker (S&P 500 + ETFs) | Full history in one call each: daily options volume and premium, greek exposure (GEX), IV rank (a year per request), daily bars, short volume |
 | p2 | ~25 per session | Market tide (all and OTM-only), 11 sector tides, SPY/QQQ/IWM/DIA ETF tide, SPY/QQQ/IWM GEX by strike, market OI change, top net impact, unusual activity, daily report, **all flow alerts** (paged) |
 | p3 | 3 per focus ticker per session | Dark-pool prints (top 500 by premium), net premium ticks, OI change. Focus list is in `FOCUS` in `harvest.py`, or pass `--focus AAPL,NVDA,...` |
 

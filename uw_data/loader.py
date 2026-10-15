@@ -24,7 +24,9 @@ def datasets():
 
 
 def _rows(payload):
-    data = payload.get("data", payload)
+    data = payload.get("data")
+    if data is None:  # some endpoints name the list differently (e.g. short volume uses "si")
+        data = next((v for k, v in payload.items() if k != "_request" and isinstance(v, list)), payload)
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
