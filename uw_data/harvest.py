@@ -45,6 +45,9 @@ DATA_START = dt.date(2022, 1, 1)  # UW history begins here; the plan's lookback 
 DAILY_RESERVE = 200               # leave this many requests of the daily limit unused
 # If the API doesn't report its daily limit in headers, stop each run at this many requests.
 FALLBACK_RUN_CAP = int(os.environ.get("UW_RUN_CAP", "14000"))
+# Stop cleanly after this many minutes so a CI job saves its work before the runner's time limit.
+MAX_MINUTES = float(os.environ.get("UW_MAX_MINUTES", "0")) or None
+STARTED = time.monotonic()
 
 SECTORS = ["Basic Materials", "Communication Services", "Consumer Cyclical", "Consumer Defensive",
            "Energy", "Financial Services", "Healthcare", "Industrials", "Real Estate", "Technology",
@@ -84,6 +87,8 @@ class Client:
         self.headers_shown = False
 
     def get(self, path, params=None, stream=False):
+        if MAX_MINUTES and time.monotonic() - STARTED > MAX_MINUTES * 60:
+            raise OutOfBudget(f"time budget of {MAX_MINUTES:.0f} min used -- next run continues")
         if self.max_requests is not None and self.sent >= self.max_requests:
             raise OutOfBudget(f"--max-requests {self.max_requests} reached")
         if self.daily_limit and self.daily_count is not None and self.daily_count >= self.daily_limit - DAILY_RESERVE:
