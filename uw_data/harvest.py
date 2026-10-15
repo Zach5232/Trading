@@ -116,6 +116,11 @@ class Client:
             time.sleep(int(reset) / 1000 + 0.5)
 
 
+def _data(payload):
+    rows = payload.get("data", payload.get("result", [])) if isinstance(payload, dict) else payload
+    return rows if isinstance(rows, list) else []
+
+
 # ---------------------------------------------------------------- storage
 def out_path(dataset, key):
     safe = key.replace("/", "_").replace(" ", "_")
@@ -192,8 +197,8 @@ def trading_days(client, st, end):
     r = client.get("/api/stock/SPY/ohlc/1d", {"timeframe": "5Y", "limit": 2500})
     days = []
     if r.status_code == 200:
-        for row in r.json().get("data", []):
-            stamp = row.get("market_time") or row.get("start_time") or row.get("date") or ""
+        for row in _data(r.json()):
+            stamp = row.get("date") or row.get("market_time") or row.get("start_time") or ""
             try:
                 days.append(dt.date.fromisoformat(str(stamp)[:10]))
             except ValueError:
@@ -351,7 +356,7 @@ def harvest_flow_alerts(client, d):
                 p.with_suffix(".err").write_text(f"{r.status_code} {r.text[:500]}")
                 log(dataset="flow_alerts", key=d.isoformat(), status=r.status_code, body=r.text[:300])
             return "err"
-        rows = r.json().get("data", [])
+        rows = _data(r.json())
         stamps = [m for m in (_row_ms(x) for x in rows) if m]
         nxt = min(stamps) if stamps else None
         save(day_dir / f"p{page:03d}.json.gz",
