@@ -127,8 +127,21 @@ def out_path(dataset, key):
     return RAW / dataset / f"{safe}.json.gz"
 
 
+def _load_done_list():
+    """Paths (relative to RAW) already stored elsewhere -- set by the GitHub Action, whose checkout
+    leaves the archive's files out to stay small. UW_DONE_LIST is a file of `git ls-tree` paths."""
+    f = os.environ.get("UW_DONE_LIST")
+    return set(Path(f).read_text().split()) if f and Path(f).exists() else set()
+
+
+DONE_LIST = _load_done_list()
+
+
 def done(p):
-    return p.exists() or p.with_suffix(".err").exists()
+    if p.exists() or p.with_suffix(".err").exists():
+        return True
+    rel = p.relative_to(RAW).as_posix()
+    return rel in DONE_LIST or rel[:-len(".json.gz")] + ".err" in DONE_LIST
 
 
 def save(p, payload):
@@ -237,9 +250,16 @@ def load_universe():
     try:
         from data_loader import get_sp500_tickers
         tickers = get_sp500_tickers(save_path=str(HERE.parent / "stock_model/Data/raw_data/sp500_tickers.csv"))
-    except Exception as e:  # noqa: BLE001 -- universe is best-effort, extras still run
-        print(f"  could not load S&P 500 list ({e}); using focus + extras only")
-        tickers = []
+    except Exception:  # noqa: BLE001 -- no stock_model here (e.g. the uw-data repo); read Wikipedia directly
+        try:
+            import io
+            import pandas as pd
+            html = requests.get("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies",
+                                headers={"User-Agent": "Mozilla/5.0"}, timeout=30).text
+            tickers = pd.read_html(io.StringIO(html))[0]["Symbol"].astype(str).str.strip().tolist()
+        except Exception as e:  # noqa: BLE001 -- universe is best-effort, extras still run
+            print(f"  could not load S&P 500 list ({e}); using focus + extras only")
+            tickers = []
     seen, out = set(), []
     for t in list(tickers) + EXTRA_TICKERS + FOCUS:
         t = t.replace(".", "-") if "." in t else t
@@ -336,7 +356,8 @@ def _row_ms(row):
 def harvest_flow_alerts(client, d):
     """All flow alerts for one session, newest page first, walking older_than back to the open."""
     day_dir = RAW / "flow_alerts" / d.isoformat()
-    if (day_dir / "complete").exists() or out_path("flow_alerts", d.isoformat()).with_suffix(".err").exists():
+    if (day_dir / "complete").exists() or f"flow_alerts/{d.isoformat()}/complete" in DONE_LIST \
+            or done(out_path("flow_alerts", d.isoformat())):
         return "skip"
     start = int(dt.datetime(d.year, d.month, d.day, 4, 0, tzinfo=dt.timezone.utc).timestamp() * 1000)
     end = int((dt.datetime(d.year, d.month, d.day, 4, 0, tzinfo=dt.timezone.utc) + dt.timedelta(days=1)).timestamp() * 1000)
