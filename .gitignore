@@ -28,3 +28,6 @@ crypto_model/Results/crypto_backtest/
 !stock_model/Results/error_log.csv
 stock_model/*.xls
 stock_model/Data/
+
+# Unusual Whales raw archive -- licensed data, keep local (this repo is public)
+uw_data/data/
