@@ -43,6 +43,8 @@ STATE = HERE / "data" / "state.json"
 
 DATA_START = dt.date(2022, 1, 1)  # UW history begins here; the plan's lookback may cut it shorter
 DAILY_RESERVE = 200               # leave this many requests of the daily limit unused
+# If the API doesn't report its daily limit in headers, stop each run at this many requests.
+FALLBACK_RUN_CAP = int(os.environ.get("UW_RUN_CAP", "14000"))
 
 SECTORS = ["Basic Materials", "Communication Services", "Consumer Cyclical", "Consumer Defensive",
            "Energy", "Financial Services", "Healthcare", "Industrials", "Real Estate", "Technology",
@@ -62,6 +64,14 @@ class OutOfBudget(Exception):
     pass
 
 
+def _is_quota_error(r):
+    """A request/rate quota refusal (stop the run) vs. a plan-tier refusal (mark the endpoint .err)."""
+    body = r.text.lower()
+    if "tier" in body or "premium" in body or "access" in body:
+        return False
+    return "limit" in body or "quota" in body
+
+
 class Client:
     def __init__(self, key, max_requests=None):
         self.s = requests.Session()
@@ -70,6 +80,7 @@ class Client:
         self.sent = 0
         self.daily_count = None
         self.daily_limit = None
+        self.headers_shown = False
 
     def get(self, path, params=None, stream=False):
         if self.max_requests is not None and self.sent >= self.max_requests:
@@ -77,6 +88,7 @@ class Client:
         if self.daily_limit and self.daily_count is not None and self.daily_count >= self.daily_limit - DAILY_RESERVE:
             raise OutOfBudget(f"daily limit nearly used ({self.daily_count}/{self.daily_limit}); "
                               "resets 8 PM ET -- run again then")
+        r = None
         for attempt in range(5):
             self.sent += 1
             try:
@@ -86,6 +98,14 @@ class Client:
                 last = e
                 continue
             self._read_limits(r)
+            if not self.headers_shown:
+                self.headers_shown = True
+                print("  rate headers: " + (", ".join(f"{k}={v}" for k, v in r.headers.items()
+                                                       if "req" in k.lower() or "limit" in k.lower()) or "none"))
+            if self.daily_limit is None and self.sent >= FALLBACK_RUN_CAP:
+                raise OutOfBudget(f"run cap {FALLBACK_RUN_CAP} reached (daily limit not reported)")
+            if r.status_code in (403, 422) and _is_quota_error(r):
+                raise OutOfBudget(f"API quota hit ({r.status_code}): {r.text[:200]}")
             if r.status_code == 429:
                 wait = int(r.headers.get("retry-after", 60))
                 print(f"  429 rate limited, sleeping {wait}s")
@@ -96,7 +116,9 @@ class Client:
                 continue
             self._pace(r)
             return r
-        raise RuntimeError(f"giving up on {path}: {locals().get('last', 'repeated 5xx/429')}")
+        if r is not None and r.status_code == 429:
+            raise OutOfBudget("still rate limited after 5 tries")
+        raise RuntimeError(f"giving up on {path}: {locals().get('last', 'repeated 5xx')}")
 
     def _read_limits(self, r):
         h = r.headers
