@@ -22,6 +22,8 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
+from gamma_regime import gamma_buckets, label_for, load_spy_gamma, size_multiplier
+
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 
@@ -218,6 +220,29 @@ def main() -> None:
     # ── Step 2: Tag each trade ────────────────────────────────────────────────
     trades["regime"] = trades["week_start"].map(regime_map["regime"])
     trades["year"]   = trades["entry_date"].dt.year
+
+    # Optional: SPY dealer-gamma regime at entry (needs the private UW-Data archive, see gamma_regime.py)
+    gamma = load_spy_gamma()
+    if gamma is not None:
+        trades["gamma_bucket"] = label_for(trades["entry_date"], gamma_buckets(gamma))
+        gamma_rows = []
+        for bucket in ["NEG_STRONG", "NEG", "NEUTRAL", "POS", "UNKNOWN"]:
+            sub = trades[trades["gamma_bucket"] == bucket]
+            if sub.empty:
+                continue
+            stats = compute_trade_stats(sub)
+            stats["gamma_bucket"] = bucket
+            stats["size_mult"] = size_multiplier(bucket)
+            gamma_rows.append(stats)
+        gamma_df = pd.DataFrame(gamma_rows)[[
+            "gamma_bucket", "size_mult", "total_trades", "win_rate", "avg_r", "profit_factor",
+            "avg_pnl_per_trade", "stop_hit_pct", "target_hit_pct",
+        ]]
+        gamma_df.to_csv(RESULTS_DIR / "gamma_breakdown.csv", index=False)
+        print("\nBy SPY gamma regime at entry (from the UW archive):")
+        print(gamma_df.to_string(index=False))
+    else:
+        print("  (SPY gamma archive not found -- set UW_DATA_DIR to a UW-Data checkout for the gamma breakdown)")
 
     unknown_pct = (trades["regime"] == "UNKNOWN").mean() * 100
     if unknown_pct > 5:
