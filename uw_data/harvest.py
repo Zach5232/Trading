@@ -316,7 +316,7 @@ def snap_tasks(today):
     return t
 
 
-def p1_tasks(tickers, earliest, today):
+def p1_tasks(tickers, earliest, today, iv_anchor=None):
     months = max(1, (today.year - earliest.year) * 12 + today.month - earliest.month + 1)
     tf = f"{months}M"
     t = [("total_options_volume", today.isoformat(), "/api/market/total-options-volume", {"limit": 500})]
@@ -331,7 +331,7 @@ def p1_tasks(tickers, earliest, today):
               # reported vs estimated EPS, surprise %, pre/post-market timing
               ("earnings_eps", s, f"/api/stock/{q}/earnings", None)]
         # iv-rank returns at most a year per request: walk back a year at a time from today
-        end = today
+        end = iv_anchor or today
         while end > earliest:
             t.append(("iv_rank", f"{s}_{end.isoformat()}", f"/api/stock/{q}/iv-rank",
                       {"date": end.isoformat(), "timespan": "1y"}))
@@ -492,7 +492,8 @@ def main():
         sys.exit("Set UW_API_KEY first (export UW_API_KEY=...). Never commit it.")
     client = Client(key, a.max_requests)
     st = load_state()
-    today = dt.date.today()
+    from zoneinfo import ZoneInfo
+    today = dt.datetime.now(ZoneInfo("America/New_York")).date()   # runners are UTC; the API wants ET dates
     tiers = a.only or ["snap", "p1", "p2", "p3"]
     try:
         days = trading_days(client, st, today)
@@ -507,7 +508,9 @@ def main():
         if "snap" in tiers:
             plan["snap"] = snap_tasks(today)
         if "p1" in tiers:
-            plan["p1"] = p1_tasks(load_universe(), earliest, today)
+            # fixed anchor so IV-rank year windows don't shift (and re-pull) every day
+            anchor = dt.date.fromisoformat(st.setdefault("iv_anchor", "2026-10-15"))
+            plan["p1"] = p1_tasks(load_universe(), earliest, today, anchor)
         if "p2" in tiers:
             plan["p2"] = p2_tasks(days)
         if "p3" in tiers:
