@@ -325,7 +325,11 @@ def p1_tasks(tickers, earliest, today):
         t += [("options_volume", s, f"/api/stock/{q}/options-volume", {"limit": 500}),
               ("greek_exposure", s, f"/api/stock/{q}/greek-exposure", {"timeframe": tf}),
               ("ohlc_1d", s, f"/api/stock/{q}/ohlc/1d", {"timeframe": tf, "limit": 2500}),
-              ("short_volume", s, f"/api/shorts/{q}/volume-and-ratio", None)]
+              ("short_volume", s, f"/api/shorts/{q}/volume-and-ratio", None),
+              # past earnings: moves before/after, and how long/short straddles did
+              ("earnings_history", s, f"/api/earnings/{q}", None),
+              # reported vs estimated EPS, surprise %, pre/post-market timing
+              ("earnings_eps", s, f"/api/stock/{q}/earnings", None)]
         # iv-rank returns at most a year per request: walk back a year at a time from today
         end = today
         while end > earliest:
