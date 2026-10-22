@@ -54,11 +54,14 @@ def gamma_buckets(net_gamma: pd.Series, window: int = 252, min_periods: int = 60
     return lab
 
 
+MAX_AGE = pd.Timedelta(days=5)  # older gamma than this is stale (the UW feed ended Oct 2026) -> UNKNOWN, full size
+
+
 def label_for(dates: pd.Series, buckets: pd.Series) -> list[str]:
-    """Bucket as of the last trading day strictly before each date (no lookahead)."""
+    """Bucket as of the last trading day strictly before each date (no lookahead), if that day is recent."""
     left = pd.DataFrame({"d": pd.to_datetime(pd.Series(dates).values), "i": range(len(dates))}).sort_values("d")
     right = pd.DataFrame({"d": buckets.index, "bucket": buckets.values}).sort_values("d")
-    m = pd.merge_asof(left, right, on="d", direction="backward", allow_exact_matches=False)
+    m = pd.merge_asof(left, right, on="d", direction="backward", allow_exact_matches=False, tolerance=MAX_AGE)
     return m.sort_values("i")["bucket"].fillna("UNKNOWN").tolist()
 
 
